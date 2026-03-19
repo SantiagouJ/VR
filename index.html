@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Casa 3D - Editor de Colores (Blender)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- Drop zone -->
+  <div id="drop-zone">
+    <div class="drop-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <h2>Carga tu apartamento 3D</h2>
+      <p>Arrastra y suelta un archivo <strong>.glb</strong> o <strong>.gltf</strong> exportado desde Blender</p>
+      <label class="browse-btn">
+        Seleccionar archivo
+        <input type="file" id="file-input" accept=".glb,.gltf" style="display:none">
+      </label>
+      <p class="format-hint">Formatos soportados: .glb, .gltf</p>
+    </div>
+
+    <div class="instructions">
+      <h3>Cómo preparar tu modelo en Blender</h3>
+      <ol>
+        <li>Nombra cada objeto/mesh que quieras colorear (ej: <code>Pared_Frontal</code>, <code>Techo</code>, <code>Puerta</code>)</li>
+        <li>Ve a <code>File &gt; Export &gt; glTF 2.0 (.glb)</code></li>
+        <li>En las opciones de exportación, activa <strong>"Apply Modifiers"</strong></li>
+        <li>Guarda como <code>.glb</code> y arrástralo aquí</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Controls (generated dynamically) -->
+  <div id="controls">
+    <h2>Editor de Colores</h2>
+    <div class="model-name" id="model-name"></div>
+    <p class="subtitle">Haz clic en una parte o en su color</p>
+    <div class="part-count" id="part-count"></div>
+    <div id="parts-list"></div>
+    <div class="divider"></div>
+    <button class="action-btn" id="btn-reset-colors">Restaurar colores originales</button>
+    <button class="action-btn" id="btn-randomize">Colores aleatorios</button>
+    <button class="action-btn danger" id="btn-load-new">Cargar otro modelo</button>
+  </div>
+
+  <div id="hint">Arrastra para rotar &bull; Scroll para zoom &bull; Click en una parte para seleccionarla</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

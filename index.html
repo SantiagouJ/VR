@@ -3,33 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Casa 3D - Editor de Colores (Blender)</title>
+  <title>Casa 3D - Acabados y Texturas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="canvas-container"></div>
 
   <!-- Drop zone -->
-  <div id="drop-zone">
+  <div id="drop-zone" role="region" aria-label="Zona de carga de archivos 3D">
     <div class="drop-box">
-      <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <h2>Carga tu apartamento 3D</h2>
-      <p>Arrastra y suelta un archivo <strong>.glb</strong> o <strong>.gltf</strong> exportado desde Blender</p>
-      <label class="browse-btn">
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <h1>Carga tu apartamento 3D</h1>
+      <p class="drop-description">Arrastra y suelta un archivo <strong>.glb</strong> o <strong>.gltf</strong> exportado desde Blender</p>
+      <label class="browse-btn" tabindex="0" role="button" aria-label="Seleccionar archivo 3D">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="btn-icon">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
         Seleccionar archivo
-        <input type="file" id="file-input" accept=".glb,.gltf" style="display:none">
+        <input type="file" id="file-input" accept=".glb,.gltf" aria-label="Seleccionar archivo GLB o GLTF">
       </label>
       <p class="format-hint">Formatos soportados: .glb, .gltf</p>
     </div>
 
     <div class="instructions">
-      <h3>Cómo preparar tu modelo en Blender</h3>
+      <h2>Cómo preparar tu modelo en Blender</h2>
       <ol>
-        <li>Nombra cada objeto/mesh que quieras colorear (ej: <code>Pared_Frontal</code>, <code>Techo</code>, <code>Puerta</code>)</li>
+        <li>Nombra cada objeto/mesh que quieras personalizar (ej: <code>Pared_Frontal</code>, <code>Piso</code>, <code>Cocina</code>)</li>
         <li>Ve a <code>File &gt; Export &gt; glTF 2.0 (.glb)</code></li>
         <li>En las opciones de exportación, activa <strong>"Apply Modifiers"</strong></li>
         <li>Guarda como <code>.glb</code> y arrástralo aquí</li>
@@ -38,24 +47,142 @@
   </div>
 
   <!-- Loading -->
-  <div id="loading">
-    <div class="spinner"></div>
+  <div id="loading" role="status" aria-live="polite">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p class="loading-text">Cargando modelo 3D...</p>
+    </div>
   </div>
 
-  <!-- Controls (generated dynamically) -->
-  <div id="controls">
-    <h2>Editor de Colores</h2>
-    <div class="model-name" id="model-name"></div>
-    <p class="subtitle">Haz clic en una parte o en su color</p>
-    <div class="part-count" id="part-count"></div>
-    <div id="parts-list"></div>
+  <!-- Mobile toggle button -->
+  <button id="panel-toggle" class="panel-toggle" aria-label="Abrir panel de acabados" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7"/>
+      <rect x="14" y="3" width="7" height="7"/>
+      <rect x="14" y="14" width="7" height="7"/>
+      <rect x="3" y="14" width="7" height="7"/>
+    </svg>
+    <span class="toggle-label">Acabados</span>
+  </button>
+
+  <!-- Controls panel -->
+  <div id="controls" role="complementary" aria-label="Panel de acabados y texturas">
+    <div class="panel-header">
+      <div class="panel-title-row">
+        <h2>Acabados y Texturas</h2>
+        <button class="panel-close" id="panel-close" aria-label="Cerrar panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="model-name" id="model-name"></div>
+      <p class="subtitle">Selecciona una superficie para cambiar su acabado</p>
+    </div>
+
+    <!-- Parts View -->
+    <div id="parts-view">
+      <div class="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" id="parts-search" placeholder="Buscar superficie..." aria-label="Buscar partes del modelo">
+      </div>
+      <div class="part-count" id="part-count"></div>
+      <div id="parts-list" role="list"></div>
+    </div>
+
+    <!-- Finish Selector View -->
+    <div id="finish-view" class="view-hidden">
+      <button class="back-btn" id="btn-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Volver a superficies
+      </button>
+
+      <div class="selected-part-info" id="selected-part-info">
+        <div class="selected-part-preview" id="selected-part-preview"></div>
+        <span class="selected-part-name" id="selected-part-label"></span>
+      </div>
+
+      <div class="finish-tabs">
+        <button class="finish-tab active" data-tab="catalog">Baldosas</button>
+        <button class="finish-tab" data-tab="texture">Textura</button>
+        <button class="finish-tab" data-tab="color">Color</button>
+      </div>
+
+      <div class="finish-content">
+        <!-- Baldosas / Catalog tab -->
+        <div class="tab-panel active" data-panel="catalog">
+          <div class="category-chips" id="category-chips"></div>
+          <div class="tile-grid" id="tile-grid"></div>
+        </div>
+
+        <!-- Texture upload tab -->
+        <div class="tab-panel" data-panel="texture">
+          <label class="upload-area" id="upload-area">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="upload-icon">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <span class="upload-text">Arrastra una imagen o haz clic</span>
+            <span class="upload-formats">JPG, PNG, WebP</span>
+            <input type="file" id="texture-input" accept="image/*">
+          </label>
+          <div id="uploaded-textures" class="uploaded-textures"></div>
+        </div>
+
+        <!-- Solid color tab -->
+        <div class="tab-panel" data-panel="color">
+          <div class="solid-color-section">
+            <div class="color-picker-row">
+              <input type="color" id="solid-color-picker" value="#cccccc">
+              <span class="color-hex-label" id="color-hex-label">#CCCCCC</span>
+            </div>
+            <button class="apply-color-btn" id="btn-apply-color">Aplicar color sólido</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="divider"></div>
-    <button class="action-btn" id="btn-reset-colors">Restaurar colores originales</button>
-    <button class="action-btn" id="btn-randomize">Colores aleatorios</button>
-    <button class="action-btn danger" id="btn-load-new">Cargar otro modelo</button>
+    <div class="actions-group">
+      <button class="action-btn secondary" id="btn-reset-colors">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="btn-icon">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
+        Restaurar originales
+      </button>
+      <button class="action-btn primary" id="btn-randomize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="btn-icon">
+          <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+          <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+        </svg>
+        Acabados aleatorios
+      </button>
+      <button class="action-btn danger" id="btn-load-new">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="btn-icon">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Cargar otro modelo
+      </button>
+    </div>
   </div>
 
-  <div id="hint">Arrastra para rotar &bull; Scroll para zoom &bull; Click en una parte para seleccionarla</div>
+  <div id="hint" role="status">
+    <span class="hint-key">Arrastra</span> para rotar
+    <span class="hint-sep"></span>
+    <span class="hint-key">Scroll</span> para zoom
+    <span class="hint-sep"></span>
+    <span class="hint-key">Click</span> para seleccionar
+  </div>
 
   <script type="importmap">
   {

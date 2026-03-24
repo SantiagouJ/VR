@@ -1212,16 +1212,25 @@ function animate() {
 animate();
 
 // ────────────────────────────────────────────
-// Auto-load casa.glb if available
+// Load default model
 // ────────────────────────────────────────────
-fetch('casa.glb', { method: 'HEAD' })
-  .then(res => {
-    if (res.ok) {
-      showLoading(true);
-      gltfLoader.load('casa.glb', (gltf) => {
-        processModel(gltf, 'casa.glb');
-        showLoading(false);
-      }, undefined, () => showLoading(false));
+const DEFAULT_MODEL = 'apto modelado.glb';
+
+function loadDefaultModel() {
+  showLoading(true);
+  gltfLoader.load(
+    DEFAULT_MODEL,
+    (gltf) => {
+      processModel(gltf, DEFAULT_MODEL);
+      showLoading(false);
+    },
+    undefined,
+    (error) => {
+      showLoading(false);
+      console.error('Error cargando modelo por defecto:', error);
+      alert('No se pudo cargar el modelo de ejemplo. Asegúrate de que el archivo "' + DEFAULT_MODEL + '" esté en la misma carpeta.');
     }
-  })
-  .catch(() => {});
+  );
+}
+
+document.getElementById('btn-load-default').addEventListener('click', loadDefaultModel);

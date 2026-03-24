@@ -199,6 +199,63 @@ button:focus:not(:focus-visible) { outline: none; }
   color: var(--color-text-tertiary);
 }
 
+.drop-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+  width: 100%;
+}
+
+.drop-divider::before,
+.drop-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.drop-divider span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.default-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, rgba(129, 199, 132, 0.15), rgba(129, 199, 132, 0.08));
+  border: 1px solid rgba(129, 199, 132, 0.28);
+  border-radius: var(--radius-md);
+  color: var(--color-success);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-family: var(--font-family);
+}
+
+.default-model-btn .btn-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.default-model-btn:hover {
+  background: linear-gradient(135deg, rgba(129, 199, 132, 0.25), rgba(129, 199, 132, 0.15));
+  border-color: rgba(129, 199, 132, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(129, 199, 132, 0.15);
+}
+
+.default-model-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
 /* Instructions */
 .instructions {
   max-width: 520px;

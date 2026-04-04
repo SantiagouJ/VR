@@ -62,7 +62,7 @@ const GROUP_KEYWORDS = [
 ];
 
 // ────────────────────────────────────────────
-// Procedural texture generation
+// Procedural texture generation (noise-based)
 // ────────────────────────────────────────────
 function seededRandom(seed) {
   let s = seed;
@@ -83,117 +83,268 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+function createNoise2D(rand) {
+  const S = 256, perm = new Uint8Array(S * 2);
+  const gx = new Float32Array(S), gy = new Float32Array(S);
+  for (let i = 0; i < S; i++) {
+    const a = rand() * Math.PI * 2;
+    gx[i] = Math.cos(a); gy[i] = Math.sin(a); perm[i] = i;
+  }
+  for (let i = S - 1; i > 0; i--) {
+    const j = (rand() * (i + 1)) | 0;
+    const t = perm[i]; perm[i] = perm[j]; perm[j] = t;
+  }
+  for (let i = 0; i < S; i++) perm[i + S] = perm[i];
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const X = xi & 255, Y = yi & 255;
+    const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+    const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+    const aa = perm[perm[X] + Y], ba = perm[perm[X + 1] + Y];
+    const ab = perm[perm[X] + Y + 1], bb = perm[perm[X + 1] + Y + 1];
+    const d00 = gx[aa] * xf + gy[aa] * yf;
+    const d10 = gx[ba] * (xf - 1) + gy[ba] * yf;
+    const d01 = gx[ab] * xf + gy[ab] * (yf - 1);
+    const d11 = gx[bb] * (xf - 1) + gy[bb] * (yf - 1);
+    return (d00 + u * (d10 - d00)) + v * ((d01 + u * (d11 - d01)) - (d00 + u * (d10 - d00)));
+  };
+}
+
+function fbm(noise, x, y, oct) {
+  let val = 0, amp = 1, freq = 1, max = 0;
+  for (let i = 0; i < oct; i++) {
+    val += noise(x * freq, y * freq) * amp;
+    max += amp; amp *= 0.5; freq *= 2;
+  }
+  return val / max;
+}
+
+function turbulence(noise, x, y, oct) {
+  let val = 0, amp = 1, freq = 1, max = 0;
+  for (let i = 0; i < oct; i++) {
+    val += Math.abs(noise(x * freq, y * freq)) * amp;
+    max += amp; amp *= 0.5; freq *= 2;
+  }
+  return val / max;
+}
+
+function clamp255(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
+
 function generateTileCanvas(tile, size = 256) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
   const rand = seededRandom(hashStr(tile.id));
-
-  ctx.fillStyle = tile.base;
-  ctx.fillRect(0, 0, size, size);
+  const noise = createNoise2D(rand);
+  const imageData = ctx.createImageData(size, size);
+  const d = imageData.data;
+  const base = hexToRgb(tile.base), accent = hexToRgb(tile.accent);
 
   switch (tile.type) {
-    case 'marble': drawMarble(ctx, size, tile, rand); break;
-    case 'wood':   drawWood(ctx, size, tile, rand); break;
-    case 'stone':  drawStone(ctx, size, tile, rand); break;
-    case 'concrete': drawConcrete(ctx, size, tile, rand); break;
-    case 'solid':  drawSolid(ctx, size, tile, rand); break;
+    case 'marble':   drawMarble(d, size, base, accent, rand, noise); break;
+    case 'wood':     drawWood(d, size, base, accent, rand, noise); break;
+    case 'stone':    drawStone(d, size, base, accent, rand, noise); break;
+    case 'concrete': drawConcrete(d, size, base, accent, rand, noise); break;
+    case 'solid':    drawSolid(d, size, base, accent, rand, noise); break;
   }
 
+  ctx.putImageData(imageData, 0, 0);
   return canvas;
 }
 
-function drawMarble(ctx, s, tile, rand) {
-  const [ar, ag, ab] = hexToRgb(tile.accent);
-  for (let v = 0; v < 6; v++) {
-    ctx.beginPath();
-    ctx.moveTo(rand() * s, rand() * s);
-    const segs = 3 + Math.floor(rand() * 3);
-    for (let j = 0; j < segs; j++) ctx.quadraticCurveTo(rand() * s, rand() * s, rand() * s, rand() * s);
-    ctx.lineWidth = 0.5 + rand() * 2;
-    ctx.strokeStyle = `rgba(${ar},${ag},${ab},${0.15 + rand() * 0.25})`;
-    ctx.stroke();
-  }
-  for (let v = 0; v < 3; v++) {
-    ctx.beginPath();
-    ctx.moveTo(rand() * s, rand() * s);
-    for (let j = 0; j < 2; j++) ctx.quadraticCurveTo(rand() * s, rand() * s, rand() * s, rand() * s);
-    ctx.lineWidth = 0.3 + rand() * 0.6;
-    ctx.strokeStyle = `rgba(${ar},${ag},${ab},${0.08 + rand() * 0.12})`;
-    ctx.stroke();
-  }
-  addNoise(ctx, s, 0.02, rand);
-}
+function drawMarble(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox1 = rand() * 100, oy1 = rand() * 100;
+  const ox2 = rand() * 100, oy2 = rand() * 100;
+  const ox3 = rand() * 100, oy3 = rand() * 100;
+  const angle = rand() * Math.PI;
+  const ca = Math.cos(angle), sa = Math.sin(angle);
 
-function drawWood(ctx, s, tile, rand) {
-  const [ar, ag, ab] = hexToRgb(tile.accent);
-  for (let y = 0; y < s; y += 2 + rand() * 3) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    for (let x = 0; x < s; x += 8) ctx.lineTo(x, y + Math.sin(x * 0.02 + rand() * 6) * 1.5 + (rand() - 0.5) * 0.8);
-    ctx.lineTo(s, y);
-    ctx.lineWidth = 0.4 + rand() * 1.0;
-    ctx.strokeStyle = `rgba(${ar},${ag},${ab},${0.08 + rand() * 0.15})`;
-    ctx.stroke();
-  }
-  for (let i = 0; i < 2; i++) {
-    ctx.beginPath();
-    ctx.arc(rand() * s, rand() * s, 3 + rand() * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.12)`;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  }
-  addNoise(ctx, s, 0.015, rand);
-}
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const rx = nx * ca - ny * sa, ry = nx * sa + ny * ca;
+      const w1x = fbm(noise, nx * 3 + ox1, ny * 3 + oy1, 4);
+      const w1y = fbm(noise, nx * 3 + ox2, ny * 3 + oy2, 4);
+      const wx = rx + w1x * 0.5, wy = ry + w1y * 0.5;
+      const w2 = fbm(noise, wx * 4 + ox3, wy * 4 + oy3, 3) * 0.15;
+      const wwx = wx + w2, wwy = wy + w2;
 
-function drawStone(ctx, s, tile, rand) {
-  const [ar, ag, ab] = hexToRgb(tile.accent);
-  for (let i = 0; i < s * s * 0.08; i++) {
-    ctx.beginPath();
-    ctx.arc(rand() * s, rand() * s, 0.5 + rand() * 2, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${ar},${ag},${ab},${0.1 + rand() * 0.2})`;
-    ctx.fill();
-  }
-  for (let i = 0; i < 4; i++) {
-    ctx.beginPath();
-    ctx.moveTo(rand() * s, rand() * s);
-    ctx.lineTo(rand() * s, rand() * s);
-    ctx.lineWidth = 0.3 + rand() * 0.5;
-    ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.08)`;
-    ctx.stroke();
-  }
-  addNoise(ctx, s, 0.025, rand);
-}
+      const vn1 = fbm(noise, wwx * 5, wwy * 5, 5);
+      const v1 = Math.pow(1 - Math.abs(Math.sin(vn1 * Math.PI * 2 + wwx * 6)), 8) * 0.6;
+      const vn2 = fbm(noise, wwx * 10 + 5.2, wwy * 10 + 1.3, 4);
+      const v2 = Math.pow(1 - Math.abs(Math.sin(vn2 * Math.PI * 3 + wwy * 12)), 12) * 0.35;
+      const vn3 = fbm(noise, wwx * 20 + 9.1, wwy * 20 + 3.7, 3);
+      const v3 = Math.pow(1 - Math.abs(Math.sin(vn3 * Math.PI * 4)), 16) * 0.2;
 
-function drawConcrete(ctx, s, tile, rand) {
-  addNoise(ctx, s, 0.04, rand);
-  const [ar, ag, ab] = hexToRgb(tile.accent);
-  for (let i = 0; i < 15; i++) {
-    ctx.beginPath();
-    ctx.arc(rand() * s, rand() * s, 1 + rand() * 4, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${ar},${ag},${ab},${0.04 + rand() * 0.06})`;
-    ctx.fill();
+      const bgV = fbm(noise, nx * 2 + 20, ny * 2 + 20, 3) * 30;
+      const t = Math.min(1, v1 + v2 + v3);
+      const pn = (rand() - 0.5) * 4;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + bgV + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + bgV * 0.9 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + bgV * 0.7 + pn);
+      data[i + 3] = 255;
+    }
   }
 }
 
-function drawSolid(ctx, s, tile, rand) {
-  addNoise(ctx, s, 0.012, rand);
+function drawWood(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const ringScale = 10 + rand() * 10;
+  const hasKnot = rand() > 0.6;
+  const knotX = rand(), knotY = rand(), knotR = 0.03 + rand() * 0.04;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const warp = fbm(noise, nx * 4 + ox, ny * 1.5 + oy, 4) * 0.15;
+      const wy = ny + warp;
+      const ring = Math.sin((wy * ringScale + fbm(noise, nx * 2 + ox, ny * 2 + oy, 3) * 1.5) * Math.PI * 2) * 0.5 + 0.5;
+      const grain = Math.pow(Math.abs(Math.sin(wy * 80 + fbm(noise, nx * 40 + ox, ny * 2 + oy, 2) * 4)), 0.3) * 0.15;
+      const ray = Math.pow(Math.max(0, noise(nx * 2 + ox + 30, ny * 30 + oy + 30)), 4) * 0.08;
+      const lenV = fbm(noise, nx * 0.5 + 50, ny * 0.5 + 50, 2) * 0.1;
+
+      let knot = 0;
+      if (hasKnot) {
+        const dx = nx - knotX, dy = ny - knotY;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < knotR * 3) {
+          const kr = Math.sin(d / knotR * Math.PI * 4 + noise(nx * 20, ny * 20) * 2);
+          knot = Math.max(0, 1 - d / (knotR * 3)) * (kr * 0.3 + 0.5) * 0.5;
+        }
+      }
+
+      const t = Math.max(0, Math.min(1, ring * 0.5 + grain + ray + lenV + knot));
+      const pn = (rand() - 0.5) * 3;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + pn);
+      data[i + 3] = 255;
+    }
+  }
 }
 
-function addNoise(ctx, s, intensity, rand) {
-  const imageData = ctx.getImageData(0, 0, s, s);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const n = (rand() - 0.5) * 255 * intensity;
-    data[i]     = Math.max(0, Math.min(255, data[i] + n));
-    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + n));
-    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + n));
+function drawStone(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const lg = fbm(noise, nx * 3 + ox, ny * 3 + oy, 4) * 0.3;
+      const md = fbm(noise, nx * 8 + ox + 10, ny * 8 + oy + 10, 3) * 0.2;
+      const fn = noise(nx * 30 + ox + 20, ny * 30 + oy + 20) * 0.15;
+      const mc = noise(nx * 60 + ox + 40, ny * 60 + oy + 40) * 0.08;
+      const layer = Math.sin(ny * 15 + fbm(noise, nx * 4, ny * 4, 3) * 3) * 0.05;
+      const crystal = Math.pow(Math.max(0, noise(nx * 25 + ox + 50, ny * 25 + oy + 50)), 6) * 50;
+
+      const t = Math.max(0, Math.min(1, 0.5 + lg + md + fn + mc + layer));
+      const pn = (rand() - 0.5) * 5;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + crystal + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + crystal * 0.9 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + crystal * 0.8 + pn);
+      data[i + 3] = 255;
+    }
   }
-  ctx.putImageData(imageData, 0, 0);
+}
+
+function drawConcrete(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const pinholes = [];
+  for (let p = 0; p < 25 + ((rand() * 30) | 0); p++)
+    pinholes.push({ x: rand(), y: rand(), r: 0.002 + rand() * 0.005 });
+  const aggs = [];
+  for (let a = 0; a < 10 + ((rand() * 12) | 0); a++)
+    aggs.push({ x: rand(), y: rand(), r: 0.01 + rand() * 0.02, sh: (rand() - 0.5) * 0.15 });
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const lg = fbm(noise, nx * 2 + ox, ny * 2 + oy, 3) * 0.08;
+      const md = fbm(noise, nx * 6 + ox + 10, ny * 6 + oy + 10, 3) * 0.06;
+      const sf = turbulence(noise, nx * 15 + ox + 20, ny * 15 + oy + 20, 4) * 0.05;
+
+      let pin = 0;
+      for (const p of pinholes) {
+        const dx = nx - p.x, dy = ny - p.y, d2 = dx * dx + dy * dy;
+        if (d2 < p.r * p.r) pin = Math.max(pin, (1 - Math.sqrt(d2) / p.r) * 0.25);
+      }
+      let aggV = 0;
+      for (const a of aggs) {
+        const dx = nx - a.x, dy = ny - a.y, d2 = dx * dx + dy * dy;
+        if (d2 < a.r * a.r) aggV += (1 - Math.sqrt(d2) / a.r) * a.sh;
+      }
+
+      const t = Math.max(0, Math.min(1, 0.5 + lg + md + sf + aggV));
+      const pn = (rand() - 0.5) * 4;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t - pin * 30 + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t - pin * 30 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t - pin * 30 + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawSolid(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const v = fbm(noise, nx * 4 + ox, ny * 4 + oy, 3) * 0.03;
+      const t = Math.max(0, Math.min(1, 0.5 + v));
+      const pn = (rand() - 0.5) * 2;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function generateNormalFromCanvas(srcCanvas, strength) {
+  const s = srcCanvas.width;
+  const srcPx = srcCanvas.getContext('2d').getImageData(0, 0, s, s).data;
+  const canvas = document.createElement('canvas');
+  canvas.width = s; canvas.height = s;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(s, s);
+  const od = out.data;
+  const h = (px, py) => {
+    px = ((px % s) + s) % s; py = ((py % s) + s) % s;
+    const i = (py * s + px) * 4;
+    return (srcPx[i] + srcPx[i + 1] + srcPx[i + 2]) / (3 * 255);
+  };
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const l = h(x - 1, y), r = h(x + 1, y);
+      const t = h(x, y - 1), b = h(x, y + 1);
+      const dx = (l - r) * strength, dy = (t - b) * strength, dz = 1.0;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const i = (y * s + x) * 4;
+      od[i]     = (dx / len * 0.5 + 0.5) * 255;
+      od[i + 1] = (dy / len * 0.5 + 0.5) * 255;
+      od[i + 2] = (dz / len * 0.5 + 0.5) * 255;
+      od[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  return canvas;
 }
 
 const textureCache = new Map();
+const normalCache = new Map();
+const NORMAL_STRENGTH = { marble: 0.6, wood: 1.2, stone: 2.5, concrete: 1.8, solid: 0.2 };
 
 function getTileTexture(tile) {
   if (textureCache.has(tile.id)) return textureCache.get(tile.id);
@@ -204,13 +355,26 @@ function getTileTexture(tile) {
   texture.repeat.set(tile.repeat, tile.repeat);
   texture.colorSpace = THREE.SRGBColorSpace;
   textureCache.set(tile.id, texture);
+
+  const nCanvas = generateNormalFromCanvas(canvas, NORMAL_STRENGTH[tile.type] || 1.0);
+  const nTex = new THREE.CanvasTexture(nCanvas);
+  nTex.wrapS = THREE.RepeatWrapping;
+  nTex.wrapT = THREE.RepeatWrapping;
+  nTex.repeat.set(tile.repeat, tile.repeat);
+  normalCache.set(tile.id, nTex);
+
   return texture;
+}
+
+function getTileNormalMap(tile) {
+  if (!normalCache.has(tile.id)) getTileTexture(tile);
+  return normalCache.get(tile.id);
 }
 
 function getTilePreviewDataURL(tile) {
   const key = tile.id + '_preview';
   if (textureCache.has(key)) return textureCache.get(key);
-  const canvas = generateTileCanvas(tile, 64);
+  const canvas = generateTileCanvas(tile, 128);
   const url = canvas.toDataURL();
   textureCache.set(key, url);
   return url;
@@ -880,17 +1044,26 @@ function highlightAppliedTile() {
 // ────────────────────────────────────────────
 // Apply finishes (supports group + individual)
 // ────────────────────────────────────────────
+const ROUGHNESS_MAP = { marble: 0.15, wood: 0.45, stone: 0.65, concrete: 0.85, solid: 0.3 };
+
 function applyTileFinish(tile) {
   const indices = getSelectedMeshIndices();
   if (indices.length === 0) return;
 
   const texture = getTileTexture(tile);
+  const normalMap = getTileNormalMap(tile);
   const previewURL = getTilePreviewDataURL(tile);
 
   indices.forEach(i => {
     const mesh = meshParts[i];
     mesh.material.map = texture;
     mesh.material.color.set(0xffffff);
+    if ('normalMap' in mesh.material) {
+      mesh.material.normalMap = normalMap;
+      mesh.material.normalScale = new THREE.Vector2(0.6, 0.6);
+    }
+    if ('roughness' in mesh.material) mesh.material.roughness = ROUGHNESS_MAP[tile.type] ?? 0.5;
+    if ('metalness' in mesh.material) mesh.material.metalness = 0.0;
     mesh.material.needsUpdate = true;
     appliedFinishes.set(mesh.uuid, { type: 'tile', tile });
     updatePartListItemByIndex(i, tile.name, previewURL);
@@ -916,6 +1089,7 @@ function applyUploadedTexture(dataURL, texName) {
     indices.forEach(i => {
       const mesh = meshParts[i];
       mesh.material.map = texture;
+      if ('normalMap' in mesh.material) mesh.material.normalMap = null;
       mesh.material.color.set(0xffffff);
       mesh.material.needsUpdate = true;
       appliedFinishes.set(mesh.uuid, { type: 'uploaded', dataURL, name: texName });
@@ -935,6 +1109,7 @@ function applySolidColor(hex) {
   indices.forEach(i => {
     const mesh = meshParts[i];
     mesh.material.map = null;
+    if ('normalMap' in mesh.material) mesh.material.normalMap = null;
     mesh.material.color.set(hex);
     mesh.material.needsUpdate = true;
     appliedFinishes.set(mesh.uuid, { type: 'color', hex });
@@ -1122,6 +1297,9 @@ document.getElementById('btn-reset-colors').addEventListener('click', () => {
     if (orig) {
       mesh.material.color.copy(orig.color);
       mesh.material.map = orig.map;
+      if ('normalMap' in mesh.material) mesh.material.normalMap = orig.normalMap || null;
+      if ('roughness' in mesh.material) mesh.material.roughness = orig.roughness ?? 0.5;
+      if ('metalness' in mesh.material) mesh.material.metalness = orig.metalness ?? 0;
       mesh.material.needsUpdate = true;
     }
     appliedFinishes.delete(mesh.uuid);
@@ -1140,8 +1318,15 @@ document.getElementById('btn-randomize').addEventListener('click', () => {
   meshParts.forEach((mesh, i) => {
     const tile = allTiles[Math.floor(Math.random() * allTiles.length)];
     const texture = getTileTexture(tile);
+    const normalMap = getTileNormalMap(tile);
     mesh.material.map = texture;
     mesh.material.color.set(0xffffff);
+    if ('normalMap' in mesh.material) {
+      mesh.material.normalMap = normalMap;
+      mesh.material.normalScale = new THREE.Vector2(0.6, 0.6);
+    }
+    if ('roughness' in mesh.material) mesh.material.roughness = ROUGHNESS_MAP[tile.type] ?? 0.5;
+    if ('metalness' in mesh.material) mesh.material.metalness = 0.0;
     mesh.material.needsUpdate = true;
     appliedFinishes.set(mesh.uuid, { type: 'tile', tile });
     updatePartListItemByIndex(i, tile.name, getTilePreviewDataURL(tile));

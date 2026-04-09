@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 // ────────────────────────────────────────────
 // Tile Catalog (Corona-style finishes)
@@ -415,7 +418,16 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
 container.appendChild(renderer.domElement);
+
+const vrButton = VRButton.createButton(renderer, {
+  requiredFeatures: ['local-floor'],
+  optionalFeatures: ['hand-tracking']
+});
+vrButton.id = 'vr-button';
+document.body.appendChild(vrButton);
 
 // ────────────────────────────────────────────
 // Scene, Camera, Controls
@@ -466,6 +478,329 @@ scene.add(fillRight);
 scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 
 // (Ground plane removed)
+
+// ────────────────────────────────────────────
+// WebXR: Controllers, Hands, Rays
+// ────────────────────────────────────────────
+let isInVR = false;
+
+renderer.xr.addEventListener('sessionstart', () => {
+  isInVR = true;
+  orbitControls.enabled = false;
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  isInVR = false;
+  orbitControls.enabled = true;
+  closeVRPanel();
+});
+
+const controllerModelFactory = new XRControllerModelFactory();
+const handModelFactory = new XRHandModelFactory();
+
+const xrControllers = [0, 1].map(i => {
+  const ctrl = renderer.xr.getController(i);
+  ctrl.userData.index = i;
+  scene.add(ctrl);
+
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(controllerModelFactory.createControllerModel(grip));
+  scene.add(grip);
+
+  const hand = renderer.xr.getHand(i);
+  hand.add(handModelFactory.createHandModel(hand, 'mesh'));
+  scene.add(hand);
+
+  const rayGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -4)
+  ]);
+  const rayMat = new THREE.LineBasicMaterial({ color: 0x64B5F6, transparent: true, opacity: 0.6 });
+  const ray = new THREE.Line(rayGeo, rayMat);
+  ray.visible = false;
+  ctrl.add(ray);
+
+  ctrl.addEventListener('connected', (e) => {
+    ray.visible = e.data.targetRayMode === 'tracked-pointer' || e.data.hand != null;
+  });
+  ctrl.addEventListener('disconnected', () => { ray.visible = false; });
+
+  ctrl.addEventListener('selectstart', onXRSelectStart);
+  ctrl.addEventListener('squeezestart', onXRSqueezeStart);
+
+  return { ctrl, grip, hand, ray };
+});
+
+// ────────────────────────────────────────────
+// WebXR: VR Panel (floating 3D UI)
+// ────────────────────────────────────────────
+const VR_PANEL_W = 800;
+const VR_PANEL_H = 640;
+const VR_PANEL_SCALE_X = 0.9;
+const VR_PANEL_SCALE_Y = VR_PANEL_SCALE_X * (VR_PANEL_H / VR_PANEL_W);
+
+let vrPanelVisible = false;
+let vrPanelActiveCategory = CATALOG[0].cat;
+const vrPanelRegions = { close: null, categories: [], tiles: [] };
+
+const vrPanelCanvas = document.createElement('canvas');
+vrPanelCanvas.width = VR_PANEL_W;
+vrPanelCanvas.height = VR_PANEL_H;
+const vrPanelCtx = vrPanelCanvas.getContext('2d');
+
+const vrPanelTexture = new THREE.CanvasTexture(vrPanelCanvas);
+vrPanelTexture.colorSpace = THREE.SRGBColorSpace;
+
+const vrPanelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(VR_PANEL_SCALE_X, VR_PANEL_SCALE_Y),
+  new THREE.MeshBasicMaterial({ map: vrPanelTexture, transparent: true, side: THREE.DoubleSide })
+);
+vrPanelMesh.visible = false;
+vrPanelMesh.userData.isVRPanel = true;
+scene.add(vrPanelMesh);
+
+const vrPointerDot = new THREE.Mesh(
+  new THREE.CircleGeometry(0.006, 16),
+  new THREE.MeshBasicMaterial({ color: 0x64B5F6, depthTest: false })
+);
+vrPointerDot.visible = false;
+vrPointerDot.renderOrder = 999;
+scene.add(vrPointerDot);
+
+function drawRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function renderVRPanel() {
+  const ctx = vrPanelCtx;
+  const W = VR_PANEL_W, H = VR_PANEL_H;
+
+  ctx.clearRect(0, 0, W, H);
+
+  drawRoundRect(ctx, 0, 0, W, H, 20);
+  ctx.fillStyle = 'rgba(14, 14, 30, 0.96)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#f0f0f5';
+  ctx.font = 'bold 26px Inter, system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Acabados y Texturas', 30, 34);
+
+  drawRoundRect(ctx, W - 65, 12, 48, 42, 10);
+  ctx.fillStyle = 'rgba(239,154,154,0.12)';
+  ctx.fill();
+  ctx.fillStyle = '#ef9a9a';
+  ctx.font = 'bold 26px system-ui';
+  ctx.fillText('✕', W - 50, 36);
+  vrPanelRegions.close = { x: W - 65, y: 12, w: 48, h: 42 };
+
+  ctx.font = '600 15px Inter, system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  let cx = 30;
+  vrPanelRegions.categories = [];
+  CATALOG.forEach(cat => {
+    const tw = ctx.measureText(cat.cat).width + 28;
+    const isActive = cat.cat === vrPanelActiveCategory;
+
+    drawRoundRect(ctx, cx, 66, tw, 32, 16);
+    ctx.fillStyle = isActive ? 'rgba(100,181,246,0.2)' : 'rgba(255,255,255,0.05)';
+    ctx.fill();
+    if (isActive) {
+      ctx.strokeStyle = 'rgba(100,181,246,0.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = isActive ? '#64B5F6' : 'rgba(255,255,255,0.5)';
+    ctx.fillText(cat.cat, cx + 14, 82);
+
+    vrPanelRegions.categories.push({ x: cx, y: 66, w: tw, h: 32, cat: cat.cat });
+    cx += tw + 10;
+  });
+
+  const tiles = CATALOG.find(c => c.cat === vrPanelActiveCategory)?.tiles || [];
+  const cols = 3, tileSize = 140, gap = 22, startX = 30, startY = 118;
+
+  const selIndices = getSelectedMeshIndices();
+  const appliedTileId = selIndices.length > 0
+    ? appliedFinishes.get(meshParts[selIndices[0]]?.uuid)?.tile?.id
+    : null;
+
+  vrPanelRegions.tiles = [];
+  tiles.forEach((tile, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const tx = startX + col * (tileSize + gap);
+    const ty = startY + row * (tileSize + 40);
+
+    const isApplied = tile.id === appliedTileId;
+    if (isApplied) {
+      drawRoundRect(ctx, tx - 5, ty - 5, tileSize + 10, tileSize + 10, 10);
+      ctx.strokeStyle = 'rgba(100,181,246,0.7)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    const preview = generateTileCanvas(tile, 128);
+    drawRoundRect(ctx, tx, ty, tileSize, tileSize, 8);
+    ctx.save();
+    ctx.clip();
+    ctx.drawImage(preview, tx, ty, tileSize, tileSize);
+    ctx.restore();
+
+    drawRoundRect(ctx, tx, ty, tileSize, tileSize, 8);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = isApplied ? '#64B5F6' : 'rgba(255,255,255,0.6)';
+    ctx.font = '13px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(tile.name, tx, ty + tileSize + 8, tileSize);
+
+    vrPanelRegions.tiles.push({ x: tx, y: ty, w: tileSize, h: tileSize + 25, tile });
+  });
+
+  const selLabel = selectedGroup
+    ? `${selectedGroup.name} (${selectedGroup.meshIndices.length})`
+    : (selectedMesh ? formatName(selectedMesh.name || 'Superficie') : '');
+  if (selLabel) {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '14px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Aplicar a: ' + selLabel, 30, H - 16);
+  }
+
+  vrPanelTexture.needsUpdate = true;
+}
+
+function openVRPanel() {
+  const xrCam = renderer.xr.getCamera();
+  const pos = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  xrCam.getWorldPosition(pos);
+  xrCam.getWorldDirection(dir);
+
+  dir.y = 0;
+  dir.normalize();
+
+  vrPanelMesh.position.copy(pos).addScaledVector(dir, 1.3);
+  vrPanelMesh.position.y = pos.y - 0.05;
+  vrPanelMesh.lookAt(pos.x, vrPanelMesh.position.y, pos.z);
+
+  vrPanelMesh.visible = true;
+  vrPanelVisible = true;
+  renderVRPanel();
+}
+
+function closeVRPanel() {
+  vrPanelMesh.visible = false;
+  vrPanelVisible = false;
+  vrPointerDot.visible = false;
+}
+
+function handleVRPanelHit(uv) {
+  const x = uv.x * VR_PANEL_W;
+  const y = (1 - uv.y) * VR_PANEL_H;
+
+  const { close, categories, tiles } = vrPanelRegions;
+
+  if (close && x >= close.x && x <= close.x + close.w && y >= close.y && y <= close.y + close.h) {
+    closeVRPanel();
+    return;
+  }
+
+  for (const r of categories) {
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+      vrPanelActiveCategory = r.cat;
+      renderVRPanel();
+      return;
+    }
+  }
+
+  for (const r of tiles) {
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+      applyTileFinish(r.tile);
+      renderVRPanel();
+      return;
+    }
+  }
+}
+
+// ────────────────────────────────────────────
+// WebXR: Interaction handlers
+// ────────────────────────────────────────────
+const _xrRaycaster = new THREE.Raycaster();
+const _tempMatrix = new THREE.Matrix4();
+
+function getXRRay(controller) {
+  _tempMatrix.identity().extractRotation(controller.matrixWorld);
+  _xrRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  _xrRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(_tempMatrix);
+  return _xrRaycaster;
+}
+
+function onXRSelectStart(event) {
+  if (!isInVR) return;
+  const controller = event.target;
+  const rc = getXRRay(controller);
+
+  if (vrPanelVisible) {
+    const panelHits = rc.intersectObject(vrPanelMesh);
+    if (panelHits.length > 0) {
+      handleVRPanelHit(panelHits[0].uv);
+      return;
+    }
+  }
+
+  if (loadedModel && meshParts.length > 0) {
+    const hits = rc.intersectObjects(meshParts, true);
+    if (hits.length > 0) {
+      const hitMesh = hits[0].object;
+      const index = meshParts.indexOf(hitMesh);
+      if (index !== -1) {
+        selectMeshAndShowFinishes(hitMesh, index);
+        if (!vrPanelVisible) openVRPanel();
+        else renderVRPanel();
+      }
+    }
+  }
+}
+
+function onXRSqueezeStart() {
+  if (!isInVR) return;
+  if (vrPanelVisible) closeVRPanel();
+  else if (selectedMesh || selectedGroup) openVRPanel();
+}
+
+function updateVRPointer() {
+  if (!isInVR || !vrPanelVisible) {
+    vrPointerDot.visible = false;
+    return;
+  }
+
+  for (const { ctrl } of xrControllers) {
+    const rc = getXRRay(ctrl);
+    const hits = rc.intersectObject(vrPanelMesh);
+    if (hits.length > 0) {
+      vrPointerDot.position.copy(hits[0].point);
+      vrPointerDot.quaternion.copy(vrPanelMesh.quaternion);
+      vrPointerDot.position.addScaledVector(vrPanelMesh.getWorldDirection(new THREE.Vector3()), 0.002);
+      vrPointerDot.visible = true;
+      return;
+    }
+  }
+  vrPointerDot.visible = false;
+}
 
 // ────────────────────────────────────────────
 // GLTF Loader
@@ -1375,11 +1710,9 @@ window.addEventListener('resize', () => {
 });
 
 // ────────────────────────────────────────────
-// Animation loop
+// Animation loop (setAnimationLoop for WebXR)
 // ────────────────────────────────────────────
 function animate() {
-  requestAnimationFrame(animate);
-
   scene.children
     .filter(c => c.userData.isHighlight)
     .forEach(c => {
@@ -1391,10 +1724,15 @@ function animate() {
       }
     });
 
-  orbitControls.update();
+  if (isInVR) {
+    updateVRPointer();
+  } else {
+    orbitControls.update();
+  }
+
   renderer.render(scene, camera);
 }
-animate();
+renderer.setAnimationLoop(animate);
 
 // ────────────────────────────────────────────
 // Load default model

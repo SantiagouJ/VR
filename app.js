@@ -801,7 +801,7 @@ container.appendChild(renderer.domElement);
 
 const vrButton = VRButton.createButton(renderer, {
   requiredFeatures: ['local-floor'],
-  optionalFeatures: ['hand-tracking', 'bounded-floor']
+  optionalFeatures: ['hand-tracking']
 });
 vrButton.id = 'vr-button';
 document.body.appendChild(vrButton);
@@ -871,107 +871,22 @@ const XR_MOVE_SPEED = 2.0;
 const XR_SNAP_ANGLE = Math.PI / 6;
 const XR_STICK_DEADZONE = 0.18;
 
-// Escalado del modelo para adaptarse al espacio físico real
-// VR_SCALE_MODE: 'realsize' = 1:1 (joystick para moverse) | 'roomfit' = maqueta (caminas físicamente)
-let vrScaleMode = 'roomfit';
-let vrModelScaleFactor = 1;
-let playerPhysicalRadius = 0;
-
-renderer.xr.addEventListener('sessionstart', async () => {
+renderer.xr.addEventListener('sessionstart', () => {
   isInVR = true;
   orbitControls.enabled = false;
+  xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
   xrOffset.x = 0; xrOffset.y = 0; xrOffset.z = 0;
   xrYaw = 0;
   xrLastFrameTime = 0;
   xrSnapTurnReady = true;
-
-  const session = renderer.xr.getSession();
-
-  // Intenta obtener bounded-floor para conocer el guardian real del usuario
-  try {
-    const boundedSpace = await session.requestReferenceSpace('bounded-floor');
-    if (boundedSpace && boundedSpace.boundsGeometry && boundedSpace.boundsGeometry.length > 0) {
-      playerPhysicalRadius = computePhysicalRadius(boundedSpace.boundsGeometry);
-    }
-  } catch (e) {
-    // No disponible en Quest con Stationary Boundary: fallback a radio razonable
-    playerPhysicalRadius = 0;
-  }
-
-  xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
-
-  applyVRScaleMode();
-  ensureVRModeButton();
 });
 
 renderer.xr.addEventListener('sessionend', () => {
   isInVR = false;
   orbitControls.enabled = true;
   closeVRPanel();
-  hideVRModeButton();
   xrBaseReferenceSpace = null;
-
-  // Restaura escala del modelo al salir de VR
-  if (loadedModel && vrModelScaleFactor !== 1) {
-    loadedModel.scale.multiplyScalar(1 / vrModelScaleFactor);
-    loadedModel.position.y -= (1 - vrModelScaleFactor) * 0; // y ya estaba a 0
-    loadedModel.updateMatrixWorld(true);
-    vrModelScaleFactor = 1;
-  }
 });
-
-// Calcula el radio máximo útil (en metros) del guardian físico del usuario
-function computePhysicalRadius(boundsGeometry) {
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of boundsGeometry) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.z < minZ) minZ = p.z;
-    if (p.z > maxZ) maxZ = p.z;
-  }
-  const halfW = (maxX - minX) / 2;
-  const halfD = (maxZ - minZ) / 2;
-  return Math.min(halfW, halfD);
-}
-
-// Ajusta la escala del modelo según el modo VR seleccionado
-function applyVRScaleMode() {
-  if (!loadedModel) return;
-
-  // Primero revierte cualquier escala VR anterior
-  if (vrModelScaleFactor !== 1) {
-    loadedModel.scale.multiplyScalar(1 / vrModelScaleFactor);
-    vrModelScaleFactor = 1;
-  }
-
-  if (vrScaleMode === 'roomfit') {
-    // Calcula la huella actual del modelo (X,Z)
-    const box = new THREE.Box3().setFromObject(loadedModel);
-    const size = box.getSize(new THREE.Vector3());
-    const modelRadius = Math.max(size.x, size.z) / 2;
-
-    // Radio físico con fallback de 1.2m si no se pudo detectar el guardian
-    const physRadius = playerPhysicalRadius > 0.5 ? playerPhysicalRadius : 1.2;
-    const targetRadius = physRadius * 0.85; // 15% de margen de seguridad
-
-    vrModelScaleFactor = Math.min(1, targetRadius / modelRadius);
-
-    if (vrModelScaleFactor < 1) {
-      loadedModel.scale.multiplyScalar(vrModelScaleFactor);
-      // Re-apoya el modelo en el piso tras escalar
-      const nb = new THREE.Box3().setFromObject(loadedModel);
-      loadedModel.position.y -= nb.min.y;
-    }
-  }
-
-  loadedModel.updateMatrixWorld(true);
-}
-
-function toggleVRScaleMode() {
-  vrScaleMode = vrScaleMode === 'roomfit' ? 'realsize' : 'roomfit';
-  applyVRScaleMode();
-  updateVRModeButton();
-}
 
 const controllerModelFactory = new XRControllerModelFactory();
 const handModelFactory = new XRHandModelFactory();
@@ -1000,12 +915,8 @@ const xrControllers = [0, 1].map(i => {
 
   ctrl.addEventListener('connected', (e) => {
     ray.visible = e.data.targetRayMode === 'tracked-pointer' || e.data.hand != null;
-    ctrl.userData.handedness = e.data.handedness || null;
   });
-  ctrl.addEventListener('disconnected', () => {
-    ray.visible = false;
-    ctrl.userData.handedness = null;
-  });
+  ctrl.addEventListener('disconnected', () => { ray.visible = false; });
 
   ctrl.addEventListener('selectstart', onXRSelectStart);
   ctrl.addEventListener('squeezestart', onXRSqueezeStart);
@@ -1048,95 +959,6 @@ const vrPointerDot = new THREE.Mesh(
 vrPointerDot.visible = false;
 vrPointerDot.renderOrder = 999;
 scene.add(vrPointerDot);
-
-// ────────────────────────────────────────────
-// Botón flotante VR para cambiar modo de escala (muñeca izquierda)
-// ────────────────────────────────────────────
-const VR_MODE_BTN_W = 320, VR_MODE_BTN_H = 140;
-const vrModeBtnCanvas = document.createElement('canvas');
-vrModeBtnCanvas.width = VR_MODE_BTN_W;
-vrModeBtnCanvas.height = VR_MODE_BTN_H;
-const vrModeBtnCtx = vrModeBtnCanvas.getContext('2d');
-const vrModeBtnTexture = new THREE.CanvasTexture(vrModeBtnCanvas);
-vrModeBtnTexture.colorSpace = THREE.SRGBColorSpace;
-
-const vrModeBtnMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.16, 0.07),
-  new THREE.MeshBasicMaterial({ map: vrModeBtnTexture, transparent: true, side: THREE.DoubleSide })
-);
-vrModeBtnMesh.visible = false;
-vrModeBtnMesh.userData.isVRModeBtn = true;
-scene.add(vrModeBtnMesh);
-
-function renderVRModeButton() {
-  const ctx = vrModeBtnCtx;
-  const W = VR_MODE_BTN_W, H = VR_MODE_BTN_H;
-  ctx.clearRect(0, 0, W, H);
-
-  drawRoundRect(ctx, 6, 6, W - 12, H - 12, 18);
-  ctx.fillStyle = 'rgba(14, 14, 30, 0.94)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(100,181,246,0.4)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.fillStyle = '#f0f0f5';
-  ctx.font = 'bold 22px Inter, system-ui, sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  const mode = vrScaleMode === 'roomfit' ? 'Maqueta' : 'Escala 1:1';
-  ctx.fillText(mode, W / 2, 42);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.font = '16px Inter, system-ui, sans-serif';
-  const hint = vrScaleMode === 'roomfit'
-    ? 'Caminas físicamente'
-    : 'Usa joystick izquierdo';
-  ctx.fillText(hint, W / 2, 75);
-
-  ctx.fillStyle = '#64B5F6';
-  ctx.font = '13px Inter, system-ui, sans-serif';
-  ctx.fillText('Toca para cambiar', W / 2, 108);
-
-  ctx.textAlign = 'left';
-  vrModeBtnTexture.needsUpdate = true;
-}
-
-function ensureVRModeButton() {
-  vrModeBtnMesh.visible = true;
-  renderVRModeButton();
-}
-
-function hideVRModeButton() {
-  vrModeBtnMesh.visible = false;
-}
-
-function updateVRModeButton() {
-  renderVRModeButton();
-}
-
-// Posiciona el botón flotando sobre la muñeca/controlador izquierdo
-const _vrBtnOffset = new THREE.Vector3(0, 0.12, -0.05);
-const _vrBtnTmpPos = new THREE.Vector3();
-const _vrBtnTmpQuat = new THREE.Quaternion();
-const _vrBtnCamPos = new THREE.Vector3();
-
-function updateVRModeButtonPose() {
-  if (!vrModeBtnMesh.visible || !isInVR) return;
-
-  let leftCtrl = xrControllers.find(c => c.ctrl.userData.handedness === 'left')?.ctrl;
-  if (!leftCtrl) leftCtrl = xrControllers[0]?.ctrl;
-  if (!leftCtrl) return;
-
-  leftCtrl.getWorldPosition(_vrBtnTmpPos);
-  leftCtrl.getWorldQuaternion(_vrBtnTmpQuat);
-
-  const offset = _vrBtnOffset.clone().applyQuaternion(_vrBtnTmpQuat);
-  vrModeBtnMesh.position.copy(_vrBtnTmpPos).add(offset);
-
-  renderer.xr.getCamera().getWorldPosition(_vrBtnCamPos);
-  vrModeBtnMesh.lookAt(_vrBtnCamPos);
-}
 
 function drawRoundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -1324,15 +1146,6 @@ function onXRSelectStart(event) {
   if (!isInVR) return;
   const controller = event.target;
   const rc = getXRRay(controller);
-
-  // Prioridad: botón de modo de escala (está flotando en la muñeca izq.)
-  if (vrModeBtnMesh.visible) {
-    const btnHits = rc.intersectObject(vrModeBtnMesh);
-    if (btnHits.length > 0) {
-      toggleVRScaleMode();
-      return;
-    }
-  }
 
   if (vrPanelVisible) {
     const panelHits = rc.intersectObject(vrPanelMesh);
@@ -1641,10 +1454,6 @@ function processModel(gltf, filename) {
 
   loadedModel = model;
   scene.add(model);
-
-  // Si ya estamos en VR, re-aplica el modo de escala al nuevo modelo
-  vrModelScaleFactor = 1;
-  if (isInVR) applyVRScaleMode();
 
   box.setFromObject(model);
   const newSize = box.getSize(new THREE.Vector3());
@@ -2401,7 +2210,6 @@ function animate(time) {
 
   if (isInVR) {
     updateXRLocomotion(time || performance.now());
-    updateVRModeButtonPose();
     updateVRPointer();
   } else {
     orbitControls.update();

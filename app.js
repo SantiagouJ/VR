@@ -29,42 +29,6 @@ const CATALOG = [
     { id: 'bk-brick-modern',   name: 'Brick Wall Moderno',    type: 'brick', base: '#4a4040', accent: '#383030', worldSize: 1.0 },
     { id: 'bk-brick-beige',    name: 'Brick Wall Beige',      type: 'brick', base: '#c4a880', accent: '#a89070', worldSize: 1.0 },
   ]},
-  { cat: 'Metal', tiles: [
-    { id: 'bk-brushed-black',  name: 'Brushed Black Metal',   type: 'metal', base: '#2a2a2e', accent: '#4a4a50', worldSize: 2.0 },
-    { id: 'bk-brushed-gold',   name: 'Brushed Gold Metal',    type: 'metal', base: '#c4a040', accent: '#e0c060', worldSize: 2.0 },
-    { id: 'bk-brushed-silver', name: 'Brushed Silver Metal',  type: 'metal', base: '#b0b0b8', accent: '#d0d0d8', worldSize: 2.0 },
-    { id: 'bk-copper',         name: 'Copper',                type: 'metal', base: '#b87333', accent: '#da8a4a', worldSize: 2.0 },
-    { id: 'bk-scratched',      name: 'Heavy Scratched Steel', type: 'metal', base: '#6a6a70', accent: '#8a8a90', worldSize: 2.0 },
-    { id: 'bk-rust',           name: 'Rust',                  type: 'rust',  base: '#8b4513', accent: '#a05a2c', worldSize: 1.8 },
-  ]},
-  { cat: 'Mármol', tiles: [
-    { id: 'bk-calacatta',  name: 'Calacatta Bianco',  type: 'marble', base: '#f5f0e8', accent: '#c4a882', worldSize: 2.5 },
-    { id: 'bk-statuario',  name: 'Statuario',         type: 'marble', base: '#f0ede8', accent: '#8a8a8a', worldSize: 2.5 },
-    { id: 'bk-nero-marq',  name: 'Nero Marquina',     type: 'marble', base: '#1e1e1e', accent: '#8a7a50', worldSize: 2.5 },
-    { id: 'bk-travertino', name: 'Travertino Beige',  type: 'marble', base: '#ddd0b8', accent: '#c2ad8a', worldSize: 2.5 },
-    { id: 'bk-onyx',       name: 'Onyx Perla',        type: 'marble', base: '#e8ddd0', accent: '#c4a892', worldSize: 2.5 },
-  ]},
-  { cat: 'Piedra', tiles: [
-    { id: 'bk-stone-wall',  name: 'Old Stone Wall',      type: 'stone', base: '#8a8070', accent: '#686058', worldSize: 1.5 },
-    { id: 'bk-pizarra',     name: 'Pizarra Grafito',     type: 'stone', base: '#3a3a3a', accent: '#555555', worldSize: 1.8 },
-    { id: 'bk-granito',     name: 'Granito Gris',        type: 'stone', base: '#808080', accent: '#606060', worldSize: 2.0 },
-    { id: 'bk-arenisca',    name: 'Arenisca Sahara',     type: 'stone', base: '#d4b896', accent: '#c4a070', worldSize: 2.0 },
-    { id: 'bk-cuarcita',    name: 'Cuarcita Blanca',     type: 'stone', base: '#e8e4e0', accent: '#d0c8c0', worldSize: 2.0 },
-  ]},
-  { cat: 'Cemento', tiles: [
-    { id: 'bk-concrete',      name: 'Concrete',              type: 'concrete', base: '#b0b0b0', accent: '#909090', worldSize: 3.5 },
-    { id: 'bk-conc-panels',   name: 'Concrete Ground Panels',type: 'concrete', base: '#a8a098', accent: '#888078', worldSize: 1.5 },
-    { id: 'bk-pulido',        name: 'Cemento Pulido',        type: 'concrete', base: '#c8c0b8', accent: '#a8a098', worldSize: 3.5 },
-    { id: 'bk-microcemento',  name: 'Microcemento Grafito',  type: 'concrete', base: '#4a4a4a', accent: '#3a3a3a', worldSize: 3.5 },
-    { id: 'bk-asphalt',       name: 'Asphalt',               type: 'asphalt', base: '#3a3a3e', accent: '#2a2a2e', worldSize: 2.5 },
-    { id: 'bk-new-asphalt',   name: 'New Asphalt',           type: 'asphalt', base: '#2e2e32', accent: '#1e1e22', worldSize: 2.5 },
-  ]},
-  { cat: 'Enlucido', tiles: [
-    { id: 'bk-plaster',       name: 'Plaster',               type: 'plaster', base: '#e0dcd4', accent: '#c8c0b8', worldSize: 3.0 },
-    { id: 'bk-old-plaster',   name: 'Old Plaster Wall',      type: 'plaster', base: '#c8b8a0', accent: '#a89878', worldSize: 3.0 },
-    { id: 'bk-stucco-white',  name: 'Stucco Blanco',         type: 'plaster', base: '#f0ece4', accent: '#d8d0c8', worldSize: 3.0 },
-    { id: 'bk-stucco-warm',   name: 'Stucco Cálido',         type: 'plaster', base: '#e0ceb8', accent: '#c8b8a0', worldSize: 3.0 },
-  ]},
   { cat: 'Cerámica', tiles: [
     { id: 'bk-tile-subway',   name: 'Subway Tile',           type: 'ceramic', base: '#f0ece4', accent: '#d0ccc4', worldSize: 1.2 },
     { id: 'bk-tile-hex',      name: 'Hexagonal Tile',        type: 'ceramic', base: '#e8e0d8', accent: '#c0b8b0', worldSize: 1.0 },
@@ -72,20 +36,12 @@ const CATALOG = [
     { id: 'bk-tile-terracota',name: 'Terracota Tile',        type: 'ceramic', base: '#c45a3c', accent: '#a04028', worldSize: 1.2 },
     { id: 'bk-caution',       name: 'Caution Stripe',        type: 'ceramic', base: '#e8c820', accent: '#1a1a1a', worldSize: 1.0 },
   ]},
-  { cat: 'Tela', tiles: [
-    { id: 'bk-fabric-linen',  name: 'Linen',                 type: 'fabric', base: '#d4c8b4', accent: '#beb2a0', worldSize: 1.0 },
-    { id: 'bk-fabric-cotton', name: 'Cotton',                type: 'fabric', base: '#e8e0d8', accent: '#d0c8c0', worldSize: 1.0 },
-    { id: 'bk-leather-brown', name: 'Leather Brown',         type: 'leather',base: '#6a4430', accent: '#4a2a18', worldSize: 1.2 },
-    { id: 'bk-leather-black', name: 'Leather Black',         type: 'leather',base: '#1e1e20', accent: '#2e2e30', worldSize: 1.2 },
-    { id: 'bk-velvet-blue',   name: 'Velvet Azul',           type: 'fabric', base: '#1a2a5a', accent: '#0e1a40', worldSize: 1.0 },
-    { id: 'bk-velvet-green',  name: 'Velvet Verde',          type: 'fabric', base: '#2a4a2a', accent: '#1a3a1a', worldSize: 1.0 },
-  ]},
-  { cat: 'Natural', tiles: [
-    { id: 'bk-moss',          name: 'Moss',                  type: 'moss',  base: '#3a6a2a', accent: '#2a5a1a', worldSize: 1.5 },
-    { id: 'bk-dirty-moss',    name: 'Dirty Moss',            type: 'moss',  base: '#4a5a30', accent: '#3a4820', worldSize: 1.5 },
-    { id: 'bk-grass',         name: 'Grass',                 type: 'moss',  base: '#4a8a30', accent: '#3a7020', worldSize: 1.2 },
-    { id: 'bk-soil',          name: 'Soil',                  type: 'stone', base: '#5a4a38', accent: '#4a3a28', worldSize: 2.0 },
-    { id: 'bk-sand',          name: 'Sand',                  type: 'stone', base: '#d4c4a0', accent: '#c0b08a', worldSize: 2.5 },
+  { cat: 'Mármol', tiles: [
+    { id: 'bk-calacatta',  name: 'Calacatta Bianco',  type: 'marble', base: '#f5f0e8', accent: '#c4a882', worldSize: 2.5 },
+    { id: 'bk-statuario',  name: 'Statuario',         type: 'marble', base: '#f0ede8', accent: '#8a8a8a', worldSize: 2.5 },
+    { id: 'bk-nero-marq',  name: 'Nero Marquina',     type: 'marble', base: '#1e1e1e', accent: '#8a7a50', worldSize: 2.5 },
+    { id: 'bk-travertino', name: 'Travertino Beige',  type: 'marble', base: '#ddd0b8', accent: '#c2ad8a', worldSize: 2.5 },
+    { id: 'bk-onyx',       name: 'Onyx Perla',        type: 'marble', base: '#e8ddd0', accent: '#c4a892', worldSize: 2.5 },
   ]},
   { cat: 'Vidrio', tiles: [
     { id: 'bk-glass-clear',   name: 'Glass Clear',           type: 'glass', base: '#c8e0f0', accent: '#a0c8e0', worldSize: 3.0 },
@@ -915,11 +871,16 @@ const xrControllers = [0, 1].map(i => {
 
   ctrl.addEventListener('connected', (e) => {
     ray.visible = e.data.targetRayMode === 'tracked-pointer' || e.data.hand != null;
+    ctrl.userData.handedness = e.data.handedness || null;
   });
-  ctrl.addEventListener('disconnected', () => { ray.visible = false; });
+  ctrl.addEventListener('disconnected', () => {
+    ray.visible = false;
+    ctrl.userData.handedness = null;
+  });
 
   ctrl.addEventListener('selectstart', onXRSelectStart);
   ctrl.addEventListener('squeezestart', onXRSqueezeStart);
+  ctrl.addEventListener('squeezeend', onXRSqueezeEnd);
 
   return { ctrl, grip, hand, ray };
 });
@@ -1169,10 +1130,76 @@ function onXRSelectStart(event) {
   }
 }
 
-function onXRSqueezeStart() {
+// ────────────────────────────────────────────
+// Drag de interfaces VR (agarre con squeeze/grip)
+// ────────────────────────────────────────────
+const vrDragState = {
+  active: false,
+  mesh: null,
+  controller: null,
+  offsetMatrix: new THREE.Matrix4(),
+};
+
+function startDraggingMesh(mesh, controller) {
+  vrDragState.active = true;
+  vrDragState.mesh = mesh;
+  vrDragState.controller = controller;
+  mesh.userData.userMoved = true;
+
+  if (mesh === vrModeBtnMesh) {
+    mesh.userData.detachedFromWrist = true;
+  }
+
+  // Guarda transform del mesh relativo al controlador
+  const ctrlInv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
+  vrDragState.offsetMatrix.copy(mesh.matrixWorld).premultiply(ctrlInv);
+}
+
+function stopDraggingMesh() {
+  vrDragState.active = false;
+  vrDragState.mesh = null;
+  vrDragState.controller = null;
+}
+
+function updateVRDrag() {
+  if (!vrDragState.active || !vrDragState.mesh || !vrDragState.controller) return;
+  const m = new THREE.Matrix4().multiplyMatrices(
+    vrDragState.controller.matrixWorld,
+    vrDragState.offsetMatrix
+  );
+  m.decompose(vrDragState.mesh.position, vrDragState.mesh.quaternion, vrDragState.mesh.scale);
+}
+
+function onXRSqueezeStart(event) {
   if (!isInVR) return;
+  const controller = event.target;
+  const rc = getXRRay(controller);
+
+  // Prioridad 1: agarrar el botón de modo (si está visible)
+  if (vrModeBtnMesh.visible) {
+    const btnHits = rc.intersectObject(vrModeBtnMesh);
+    if (btnHits.length > 0) {
+      startDraggingMesh(vrModeBtnMesh, controller);
+      return;
+    }
+  }
+
+  // Prioridad 2: agarrar el panel principal (si está visible)
+  if (vrPanelVisible) {
+    const panelHits = rc.intersectObject(vrPanelMesh);
+    if (panelHits.length > 0) {
+      startDraggingMesh(vrPanelMesh, controller);
+      return;
+    }
+  }
+
+  // Fallback: comportamiento original (abrir/cerrar panel)
   if (vrPanelVisible) closeVRPanel();
   else if (selectedMesh || selectedGroup) openVRPanel();
+}
+
+function onXRSqueezeEnd() {
+  if (vrDragState.active) stopDraggingMesh();
 }
 
 function updateVRPointer() {

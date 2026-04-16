@@ -9,40 +9,89 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 // ────────────────────────────────────────────
 // Tile Catalog (Corona-style finishes)
 // ────────────────────────────────────────────
+// worldSize = tamaño físico en metros de un "tile" (1 repeat). Se usa para escalar
+// la textura dinámicamente al tamaño real de cada superficie del modelo.
 const CATALOG = [
-  { cat: 'Porcelanato', tiles: [
-    { id: 'calacatta',  name: 'Calacatta Bianco',  type: 'marble',   base: '#f5f0e8', accent: '#c4a882', repeat: 2 },
-    { id: 'statuario',  name: 'Statuario',         type: 'marble',   base: '#f0ede8', accent: '#8a8a8a', repeat: 2 },
-    { id: 'nero-marq',  name: 'Nero Marquina',     type: 'marble',   base: '#1e1e1e', accent: '#8a7a50', repeat: 2 },
-    { id: 'travertino', name: 'Travertino Beige',   type: 'marble',   base: '#ddd0b8', accent: '#c2ad8a', repeat: 2 },
-    { id: 'sahara',     name: 'Sahara Gris',        type: 'marble',   base: '#a0a0a0', accent: '#c8c8c8', repeat: 2 },
-    { id: 'onyx',       name: 'Onyx Perla',         type: 'marble',   base: '#e8ddd0', accent: '#c4a892', repeat: 2 },
-  ]},
   { cat: 'Madera', tiles: [
-    { id: 'roble',   name: 'Roble Natural',     type: 'wood', base: '#c49a6c', accent: '#8b6914', repeat: 4 },
-    { id: 'nogal',   name: 'Nogal Americano',   type: 'wood', base: '#5c3a1e', accent: '#3a2210', repeat: 4 },
-    { id: 'cerezo',  name: 'Cerezo',            type: 'wood', base: '#8b4513', accent: '#5c2d0a', repeat: 4 },
-    { id: 'pino',    name: 'Pino Blanqueado',   type: 'wood', base: '#ddd0bc', accent: '#c4b090', repeat: 4 },
-    { id: 'teca',    name: 'Teca Dorada',       type: 'wood', base: '#b8860b', accent: '#8b6508', repeat: 4 },
+    { id: 'bk-wood-struct',    name: 'Wood Structure',        type: 'wood', base: '#b8935a', accent: '#7a5c2e', worldSize: 1.8 },
+    { id: 'bk-roble-natural',  name: 'Roble Natural',         type: 'wood', base: '#c49a6c', accent: '#8b6914', worldSize: 1.8 },
+    { id: 'bk-nogal-amer',     name: 'Nogal Americano',       type: 'wood', base: '#5c3a1e', accent: '#3a2210', worldSize: 1.8 },
+    { id: 'bk-parquet',        name: 'Parquet',               type: 'wood', base: '#c8a070', accent: '#8a6030', worldSize: 1.2 },
+    { id: 'bk-pino-blanq',     name: 'Pino Blanqueado',       type: 'wood', base: '#ddd0bc', accent: '#c4b090', worldSize: 1.8 },
+    { id: 'bk-teca-dorada',    name: 'Teca Dorada',           type: 'wood', base: '#b8860b', accent: '#8b6508', worldSize: 1.8 },
+    { id: 'bk-cerezo',         name: 'Cerezo',                type: 'wood', base: '#8b4513', accent: '#5c2d0a', worldSize: 1.8 },
+    { id: 'bk-wdeck',          name: 'Weathered Decking',     type: 'wood', base: '#8a7e6c', accent: '#5e5548', worldSize: 1.5 },
+  ]},
+  { cat: 'Ladrillo', tiles: [
+    { id: 'bk-brick-red',      name: 'Brick Wall Rojo',       type: 'brick', base: '#8b3a2a', accent: '#c8a88a', worldSize: 1.0 },
+    { id: 'bk-brick-white',    name: 'Brick Wall Blanco',     type: 'brick', base: '#d8d0c8', accent: '#b8b0a8', worldSize: 1.0 },
+    { id: 'bk-brick-old',      name: 'Brick Wall Antiguo',    type: 'brick', base: '#9a6a4a', accent: '#706050', worldSize: 1.0 },
+    { id: 'bk-brick-modern',   name: 'Brick Wall Moderno',    type: 'brick', base: '#4a4040', accent: '#383030', worldSize: 1.0 },
+    { id: 'bk-brick-beige',    name: 'Brick Wall Beige',      type: 'brick', base: '#c4a880', accent: '#a89070', worldSize: 1.0 },
+  ]},
+  { cat: 'Metal', tiles: [
+    { id: 'bk-brushed-black',  name: 'Brushed Black Metal',   type: 'metal', base: '#2a2a2e', accent: '#4a4a50', worldSize: 2.0 },
+    { id: 'bk-brushed-gold',   name: 'Brushed Gold Metal',    type: 'metal', base: '#c4a040', accent: '#e0c060', worldSize: 2.0 },
+    { id: 'bk-brushed-silver', name: 'Brushed Silver Metal',  type: 'metal', base: '#b0b0b8', accent: '#d0d0d8', worldSize: 2.0 },
+    { id: 'bk-copper',         name: 'Copper',                type: 'metal', base: '#b87333', accent: '#da8a4a', worldSize: 2.0 },
+    { id: 'bk-scratched',      name: 'Heavy Scratched Steel', type: 'metal', base: '#6a6a70', accent: '#8a8a90', worldSize: 2.0 },
+    { id: 'bk-rust',           name: 'Rust',                  type: 'rust',  base: '#8b4513', accent: '#a05a2c', worldSize: 1.8 },
+  ]},
+  { cat: 'Mármol', tiles: [
+    { id: 'bk-calacatta',  name: 'Calacatta Bianco',  type: 'marble', base: '#f5f0e8', accent: '#c4a882', worldSize: 2.5 },
+    { id: 'bk-statuario',  name: 'Statuario',         type: 'marble', base: '#f0ede8', accent: '#8a8a8a', worldSize: 2.5 },
+    { id: 'bk-nero-marq',  name: 'Nero Marquina',     type: 'marble', base: '#1e1e1e', accent: '#8a7a50', worldSize: 2.5 },
+    { id: 'bk-travertino', name: 'Travertino Beige',  type: 'marble', base: '#ddd0b8', accent: '#c2ad8a', worldSize: 2.5 },
+    { id: 'bk-onyx',       name: 'Onyx Perla',        type: 'marble', base: '#e8ddd0', accent: '#c4a892', worldSize: 2.5 },
   ]},
   { cat: 'Piedra', tiles: [
-    { id: 'pizarra',   name: 'Pizarra Grafito',   type: 'stone', base: '#3a3a3a', accent: '#555', repeat: 3 },
-    { id: 'granito',   name: 'Granito Gris',       type: 'stone', base: '#808080', accent: '#606060', repeat: 3 },
-    { id: 'arenisca',  name: 'Arenisca Sahara',    type: 'stone', base: '#d4b896', accent: '#c4a070', repeat: 3 },
-    { id: 'cuarcita',  name: 'Cuarcita Blanca',    type: 'stone', base: '#e8e4e0', accent: '#d0c8c0', repeat: 3 },
+    { id: 'bk-stone-wall',  name: 'Old Stone Wall',      type: 'stone', base: '#8a8070', accent: '#686058', worldSize: 1.5 },
+    { id: 'bk-pizarra',     name: 'Pizarra Grafito',     type: 'stone', base: '#3a3a3a', accent: '#555555', worldSize: 1.8 },
+    { id: 'bk-granito',     name: 'Granito Gris',        type: 'stone', base: '#808080', accent: '#606060', worldSize: 2.0 },
+    { id: 'bk-arenisca',    name: 'Arenisca Sahara',     type: 'stone', base: '#d4b896', accent: '#c4a070', worldSize: 2.0 },
+    { id: 'bk-cuarcita',    name: 'Cuarcita Blanca',     type: 'stone', base: '#e8e4e0', accent: '#d0c8c0', worldSize: 2.0 },
   ]},
   { cat: 'Cemento', tiles: [
-    { id: 'concreto',    name: 'Concreto Natural',      type: 'concrete', base: '#b0b0b0', accent: '#909090', repeat: 1 },
-    { id: 'pulido',      name: 'Cemento Pulido',        type: 'concrete', base: '#c8c0b8', accent: '#a8a098', repeat: 1 },
-    { id: 'microcemento', name: 'Microcemento Grafito', type: 'concrete', base: '#4a4a4a', accent: '#3a3a3a', repeat: 1 },
+    { id: 'bk-concrete',      name: 'Concrete',              type: 'concrete', base: '#b0b0b0', accent: '#909090', worldSize: 3.5 },
+    { id: 'bk-conc-panels',   name: 'Concrete Ground Panels',type: 'concrete', base: '#a8a098', accent: '#888078', worldSize: 1.5 },
+    { id: 'bk-pulido',        name: 'Cemento Pulido',        type: 'concrete', base: '#c8c0b8', accent: '#a8a098', worldSize: 3.5 },
+    { id: 'bk-microcemento',  name: 'Microcemento Grafito',  type: 'concrete', base: '#4a4a4a', accent: '#3a3a3a', worldSize: 3.5 },
+    { id: 'bk-asphalt',       name: 'Asphalt',               type: 'asphalt', base: '#3a3a3e', accent: '#2a2a2e', worldSize: 2.5 },
+    { id: 'bk-new-asphalt',   name: 'New Asphalt',           type: 'asphalt', base: '#2e2e32', accent: '#1e1e22', worldSize: 2.5 },
   ]},
-  { cat: 'Unicolor', tiles: [
-    { id: 'blanco',    name: 'Blanco Brillante', type: 'solid', base: '#f5f5f5', accent: '#e8e8e8', repeat: 1 },
-    { id: 'negro',     name: 'Negro Mate',       type: 'solid', base: '#1a1a1a', accent: '#2a2a2a', repeat: 1 },
-    { id: 'gris-per',  name: 'Gris Perla',       type: 'solid', base: '#c0c0c0', accent: '#b0b0b0', repeat: 1 },
-    { id: 'azul-cob',  name: 'Azul Cobalto',     type: 'solid', base: '#1a3a8a', accent: '#0e2a6a', repeat: 1 },
-    { id: 'verde-sal', name: 'Verde Salvia',      type: 'solid', base: '#7a9a6c', accent: '#5a7a4c', repeat: 1 },
-    { id: 'terracota', name: 'Terracota',         type: 'solid', base: '#c45a3c', accent: '#a04028', repeat: 1 },
+  { cat: 'Enlucido', tiles: [
+    { id: 'bk-plaster',       name: 'Plaster',               type: 'plaster', base: '#e0dcd4', accent: '#c8c0b8', worldSize: 3.0 },
+    { id: 'bk-old-plaster',   name: 'Old Plaster Wall',      type: 'plaster', base: '#c8b8a0', accent: '#a89878', worldSize: 3.0 },
+    { id: 'bk-stucco-white',  name: 'Stucco Blanco',         type: 'plaster', base: '#f0ece4', accent: '#d8d0c8', worldSize: 3.0 },
+    { id: 'bk-stucco-warm',   name: 'Stucco Cálido',         type: 'plaster', base: '#e0ceb8', accent: '#c8b8a0', worldSize: 3.0 },
+  ]},
+  { cat: 'Cerámica', tiles: [
+    { id: 'bk-tile-subway',   name: 'Subway Tile',           type: 'ceramic', base: '#f0ece4', accent: '#d0ccc4', worldSize: 1.2 },
+    { id: 'bk-tile-hex',      name: 'Hexagonal Tile',        type: 'ceramic', base: '#e8e0d8', accent: '#c0b8b0', worldSize: 1.0 },
+    { id: 'bk-tile-mosaic',   name: 'Mosaic',                type: 'ceramic', base: '#4a7a8a', accent: '#2a5a6a', worldSize: 0.8 },
+    { id: 'bk-tile-terracota',name: 'Terracota Tile',        type: 'ceramic', base: '#c45a3c', accent: '#a04028', worldSize: 1.2 },
+    { id: 'bk-caution',       name: 'Caution Stripe',        type: 'ceramic', base: '#e8c820', accent: '#1a1a1a', worldSize: 1.0 },
+  ]},
+  { cat: 'Tela', tiles: [
+    { id: 'bk-fabric-linen',  name: 'Linen',                 type: 'fabric', base: '#d4c8b4', accent: '#beb2a0', worldSize: 1.0 },
+    { id: 'bk-fabric-cotton', name: 'Cotton',                type: 'fabric', base: '#e8e0d8', accent: '#d0c8c0', worldSize: 1.0 },
+    { id: 'bk-leather-brown', name: 'Leather Brown',         type: 'leather',base: '#6a4430', accent: '#4a2a18', worldSize: 1.2 },
+    { id: 'bk-leather-black', name: 'Leather Black',         type: 'leather',base: '#1e1e20', accent: '#2e2e30', worldSize: 1.2 },
+    { id: 'bk-velvet-blue',   name: 'Velvet Azul',           type: 'fabric', base: '#1a2a5a', accent: '#0e1a40', worldSize: 1.0 },
+    { id: 'bk-velvet-green',  name: 'Velvet Verde',          type: 'fabric', base: '#2a4a2a', accent: '#1a3a1a', worldSize: 1.0 },
+  ]},
+  { cat: 'Natural', tiles: [
+    { id: 'bk-moss',          name: 'Moss',                  type: 'moss',  base: '#3a6a2a', accent: '#2a5a1a', worldSize: 1.5 },
+    { id: 'bk-dirty-moss',    name: 'Dirty Moss',            type: 'moss',  base: '#4a5a30', accent: '#3a4820', worldSize: 1.5 },
+    { id: 'bk-grass',         name: 'Grass',                 type: 'moss',  base: '#4a8a30', accent: '#3a7020', worldSize: 1.2 },
+    { id: 'bk-soil',          name: 'Soil',                  type: 'stone', base: '#5a4a38', accent: '#4a3a28', worldSize: 2.0 },
+    { id: 'bk-sand',          name: 'Sand',                  type: 'stone', base: '#d4c4a0', accent: '#c0b08a', worldSize: 2.5 },
+  ]},
+  { cat: 'Vidrio', tiles: [
+    { id: 'bk-glass-clear',   name: 'Glass Clear',           type: 'glass', base: '#c8e0f0', accent: '#a0c8e0', worldSize: 3.0 },
+    { id: 'bk-glass-frosted', name: 'Glass Frosted',         type: 'glass', base: '#d8e0e8', accent: '#c0c8d0', worldSize: 3.0 },
+    { id: 'bk-glass-tinted',  name: 'Glass Tinted',          type: 'glass', base: '#6090a0', accent: '#487888', worldSize: 3.0 },
+    { id: 'bk-glass-green',   name: 'Glass Verde',           type: 'glass', base: '#88b8a0', accent: '#68a088', worldSize: 3.0 },
   ]},
 ];
 
@@ -145,13 +194,14 @@ function generateTileCanvas(tile, size = 256) {
   const d = imageData.data;
   const base = hexToRgb(tile.base), accent = hexToRgb(tile.accent);
 
-  switch (tile.type) {
-    case 'marble':   drawMarble(d, size, base, accent, rand, noise); break;
-    case 'wood':     drawWood(d, size, base, accent, rand, noise); break;
-    case 'stone':    drawStone(d, size, base, accent, rand, noise); break;
-    case 'concrete': drawConcrete(d, size, base, accent, rand, noise); break;
-    case 'solid':    drawSolid(d, size, base, accent, rand, noise); break;
-  }
+  const drawFn = {
+    marble: drawMarble, wood: drawWood, stone: drawStone,
+    concrete: drawConcrete, solid: drawSolid, brick: drawBrick,
+    metal: drawMetal, fabric: drawFabric, leather: drawLeather,
+    plaster: drawPlaster, ceramic: drawCeramic, rust: drawRust,
+    asphalt: drawAsphalt, glass: drawGlass, moss: drawMoss,
+  }[tile.type] || drawSolid;
+  drawFn(d, size, base, accent, rand, noise);
 
   ctx.putImageData(imageData, 0, 0);
   return canvas;
@@ -315,6 +365,293 @@ function drawSolid(data, s, base, accent, rand, noise) {
   }
 }
 
+function drawBrick(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const brickH = s / 8, brickW = s / 4;
+  const mortarW = s * 0.012;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const row = Math.floor(py / brickH);
+      const offset = (row % 2) * brickW * 0.5;
+      const bx = ((px + offset) % s) / brickW;
+      const by = py / brickH;
+      const fx = bx - Math.floor(bx), fy = by - Math.floor(by);
+
+      const isMortar = fx * brickW < mortarW || fy * brickH < mortarW;
+
+      const nx = px / s, ny = py / s;
+      const i = (py * s + px) * 4;
+
+      if (isMortar) {
+        const mn = fbm(noise, nx * 20 + ox, ny * 20 + oy, 3) * 15;
+        data[i]     = clamp255(ar + mn);
+        data[i + 1] = clamp255(ag + mn);
+        data[i + 2] = clamp255(ab + mn);
+      } else {
+        const brickSeed = Math.floor(bx) * 73 + row * 137;
+        const colorVar = ((brickSeed * 16807 + 7) % 2147483647) / 2147483647 * 30 - 15;
+        const surf = fbm(noise, nx * 12 + ox, ny * 12 + oy, 4) * 25;
+        const chip = Math.pow(Math.max(0, noise(nx * 30 + ox + 50, ny * 30 + oy + 50)), 6) * 40;
+        const pn = (rand() - 0.5) * 6;
+        data[i]     = clamp255(br + colorVar + surf + chip + pn);
+        data[i + 1] = clamp255(bg + colorVar * 0.7 + surf * 0.8 + chip * 0.6 + pn);
+        data[i + 2] = clamp255(bb + colorVar * 0.5 + surf * 0.6 + chip * 0.4 + pn);
+      }
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawMetal(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const brushAngle = rand() * Math.PI;
+  const ca = Math.cos(brushAngle), sa = Math.sin(brushAngle);
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const rx = nx * ca - ny * sa, ry = nx * sa + ny * ca;
+
+      const brush = Math.sin(ry * 200 + noise(rx * 3 + ox, ry * 0.5 + oy) * 8) * 0.12;
+      const scratch1 = Math.pow(Math.max(0, Math.abs(noise(nx * 40 + ox + 10, ny * 2 + oy + 10))), 8) * 0.15;
+      const scratch2 = Math.pow(Math.max(0, Math.abs(noise(nx * 2 + ox + 30, ny * 40 + oy + 30))), 8) * 0.1;
+      const lg = fbm(noise, nx * 2 + ox + 50, ny * 2 + oy + 50, 3) * 0.08;
+      const spec = Math.pow(Math.max(0, noise(nx * 15 + ox + 70, ny * 15 + oy + 70)), 4) * 30;
+
+      const t = Math.max(0, Math.min(1, 0.5 + brush + scratch1 + scratch2 + lg));
+      const pn = (rand() - 0.5) * 3;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + spec + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + spec * 0.95 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + spec * 0.9 + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawFabric(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const weaveScale = 60 + rand() * 40;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const warpThread = Math.sin(nx * weaveScale * Math.PI * 2) * 0.5 + 0.5;
+      const weftThread = Math.sin(ny * weaveScale * Math.PI * 2) * 0.5 + 0.5;
+      const weave = ((Math.floor(nx * weaveScale) + Math.floor(ny * weaveScale)) % 2 === 0)
+        ? warpThread * 0.15 : weftThread * 0.15;
+
+      const fuzz = fbm(noise, nx * 20 + ox, ny * 20 + oy, 4) * 0.1;
+      const lg = fbm(noise, nx * 3 + ox + 20, ny * 3 + oy + 20, 3) * 0.08;
+      const fiber = noise(nx * 80 + ox + 40, ny * 80 + oy + 40) * 0.04;
+
+      const t = Math.max(0, Math.min(1, 0.5 + weave + fuzz + lg + fiber));
+      const pn = (rand() - 0.5) * 3;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawLeather(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const grain = turbulence(noise, nx * 15 + ox, ny * 15 + oy, 5) * 0.2;
+      const pore = Math.pow(Math.max(0, noise(nx * 40 + ox + 10, ny * 40 + oy + 10)), 3) * 0.15;
+      const crease = Math.pow(1 - Math.abs(Math.sin(
+        fbm(noise, nx * 5 + ox + 20, ny * 5 + oy + 20, 3) * Math.PI * 3
+      )), 4) * 0.12;
+      const lg = fbm(noise, nx * 2 + ox + 40, ny * 2 + oy + 40, 3) * 0.1;
+      const spec = Math.pow(Math.max(0, noise(nx * 8 + ox + 60, ny * 8 + oy + 60)), 3) * 20;
+
+      const t = Math.max(0, Math.min(1, 0.5 + grain + pore + crease + lg));
+      const pn = (rand() - 0.5) * 4;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + spec + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + spec * 0.8 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + spec * 0.6 + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawPlaster(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const trowel = fbm(noise, nx * 6 + ox, ny * 6 + oy, 4) * 0.15;
+      const surf = turbulence(noise, nx * 12 + ox + 10, ny * 12 + oy + 10, 3) * 0.08;
+      const crack = Math.pow(1 - Math.abs(Math.sin(
+        fbm(noise, nx * 3 + ox + 30, ny * 3 + oy + 30, 4) * Math.PI * 2
+      )), 12) * 0.08;
+      const grain = noise(nx * 50 + ox + 50, ny * 50 + oy + 50) * 0.04;
+
+      const t = Math.max(0, Math.min(1, 0.5 + trowel + surf + crack + grain));
+      const pn = (rand() - 0.5) * 3;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawCeramic(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+  const tileCount = 6 + Math.floor(rand() * 4);
+  const tileSize = s / tileCount;
+  const groutW = s * 0.008;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const tx = px / tileSize, ty = py / tileSize;
+      const fx = tx - Math.floor(tx), fy = ty - Math.floor(ty);
+      const isGrout = fx * tileSize < groutW || fy * tileSize < groutW;
+
+      const nx = px / s, ny = py / s;
+      const i = (py * s + px) * 4;
+
+      if (isGrout) {
+        const gn = fbm(noise, nx * 30 + ox, ny * 30 + oy, 2) * 10;
+        data[i]     = clamp255(ar * 0.7 + gn);
+        data[i + 1] = clamp255(ag * 0.7 + gn);
+        data[i + 2] = clamp255(ab * 0.7 + gn);
+      } else {
+        const tileSeed = Math.floor(tx) * 97 + Math.floor(ty) * 53;
+        const colorVar = ((tileSeed * 16807 + 7) % 2147483647) / 2147483647 * 8 - 4;
+        const glaze = fbm(noise, nx * 8 + ox + 10, ny * 8 + oy + 10, 3) * 10;
+        const spec = Math.pow(Math.max(0, noise(nx * 4 + ox + 30, ny * 4 + oy + 30)), 2) * 15;
+        const pn = (rand() - 0.5) * 2;
+        data[i]     = clamp255(br + colorVar + glaze + spec + pn);
+        data[i + 1] = clamp255(bg + colorVar + glaze * 0.9 + spec * 0.95 + pn);
+        data[i + 2] = clamp255(bb + colorVar + glaze * 0.8 + spec * 0.9 + pn);
+      }
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawRust(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const lg = fbm(noise, nx * 3 + ox, ny * 3 + oy, 4) * 0.3;
+      const pitting = turbulence(noise, nx * 15 + ox + 10, ny * 15 + oy + 10, 4) * 0.2;
+      const flake = Math.pow(turbulence(noise, nx * 8 + ox + 20, ny * 8 + oy + 20, 3), 2) * 0.15;
+      const streak = Math.pow(Math.max(0, Math.sin(
+        ny * 8 + fbm(noise, nx * 4 + ox + 40, ny * 2 + oy + 40, 3) * 4
+      )), 3) * 0.1;
+
+      const t = Math.max(0, Math.min(1, 0.4 + lg + pitting + flake + streak));
+      const orangeShift = turbulence(noise, nx * 6 + ox + 60, ny * 6 + oy + 60, 3) * 30;
+      const pn = (rand() - 0.5) * 5;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + orangeShift + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + orangeShift * 0.4 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawAsphalt(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  const aggregates = [];
+  for (let a = 0; a < 80 + ((rand() * 60) | 0); a++)
+    aggregates.push({ x: rand(), y: rand(), r: 0.003 + rand() * 0.008, bright: (rand() - 0.5) * 40 });
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const lg = fbm(noise, nx * 4 + ox, ny * 4 + oy, 4) * 0.1;
+      const grit = turbulence(noise, nx * 20 + ox + 10, ny * 20 + oy + 10, 4) * 0.12;
+      const micro = noise(nx * 60 + ox + 20, ny * 60 + oy + 20) * 0.06;
+
+      let aggV = 0;
+      for (const a of aggregates) {
+        const dx = nx - a.x, dy = ny - a.y, d2 = dx * dx + dy * dy;
+        if (d2 < a.r * a.r) aggV += (1 - Math.sqrt(d2) / a.r) * a.bright;
+      }
+
+      const t = Math.max(0, Math.min(1, 0.5 + lg + grit + micro));
+      const pn = (rand() - 0.5) * 6;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + aggV + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + aggV + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + aggV + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawGlass(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const warp = fbm(noise, nx * 3 + ox, ny * 3 + oy, 3) * 0.02;
+      const frost = fbm(noise, (nx + warp) * 8 + ox + 10, (ny + warp) * 8 + oy + 10, 4) * 0.06;
+      const spec = Math.pow(Math.max(0, noise(nx * 4 + ox + 30, ny * 4 + oy + 30)), 2) * 25;
+      const edge = Math.pow(Math.max(0, noise(nx * 2 + ox + 50, ny * 2 + oy + 50)), 3) * 15;
+
+      const t = Math.max(0, Math.min(1, 0.5 + frost + warp));
+      const pn = (rand() - 0.5) * 1.5;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t + spec + edge + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + spec * 0.95 + edge * 0.9 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t + spec * 0.9 + edge * 0.85 + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
+function drawMoss(data, s, base, accent, rand, noise) {
+  const [br, bg, bb] = base, [ar, ag, ab] = accent;
+  const ox = rand() * 100, oy = rand() * 100;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = px / s, ny = py / s;
+      const clumps = fbm(noise, nx * 5 + ox, ny * 5 + oy, 5) * 0.25;
+      const detail = turbulence(noise, nx * 15 + ox + 10, ny * 15 + oy + 10, 4) * 0.15;
+      const fiber = Math.abs(noise(nx * 40 + ox + 20, ny * 40 + oy + 20)) * 0.1;
+      const depth = fbm(noise, nx * 3 + ox + 40, ny * 3 + oy + 40, 3) * 20;
+      const yellowVar = Math.max(0, noise(nx * 6 + ox + 60, ny * 6 + oy + 60)) * 15;
+
+      const t = Math.max(0, Math.min(1, 0.4 + clumps + detail + fiber));
+      const pn = (rand() - 0.5) * 5;
+      const i = (py * s + px) * 4;
+      data[i]     = clamp255(br + (ar - br) * t - depth * 0.3 + yellowVar * 0.5 + pn);
+      data[i + 1] = clamp255(bg + (ag - bg) * t + depth * 0.2 + yellowVar * 0.3 + pn);
+      data[i + 2] = clamp255(bb + (ab - bb) * t - depth * 0.5 + pn);
+      data[i + 3] = 255;
+    }
+  }
+}
+
 function generateNormalFromCanvas(srcCanvas, strength) {
   const s = srcCanvas.width;
   const srcPx = srcCanvas.getContext('2d').getImageData(0, 0, s, s).data;
@@ -347,7 +684,11 @@ function generateNormalFromCanvas(srcCanvas, strength) {
 
 const textureCache = new Map();
 const normalCache = new Map();
-const NORMAL_STRENGTH = { marble: 0.6, wood: 1.2, stone: 2.5, concrete: 1.8, solid: 0.2 };
+const NORMAL_STRENGTH = {
+  marble: 0.6, wood: 1.2, stone: 2.5, concrete: 1.8, solid: 0.2,
+  brick: 3.0, metal: 0.4, fabric: 1.5, leather: 1.8, plaster: 1.2,
+  ceramic: 0.5, rust: 2.2, asphalt: 2.0, glass: 0.15, moss: 2.0,
+};
 
 function getTileTexture(tile) {
   if (textureCache.has(tile.id)) return textureCache.get(tile.id);
@@ -355,15 +696,15 @@ function getTileTexture(tile) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(tile.repeat, tile.repeat);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
   textureCache.set(tile.id, texture);
 
   const nCanvas = generateNormalFromCanvas(canvas, NORMAL_STRENGTH[tile.type] || 1.0);
   const nTex = new THREE.CanvasTexture(nCanvas);
   nTex.wrapS = THREE.RepeatWrapping;
   nTex.wrapT = THREE.RepeatWrapping;
-  nTex.repeat.set(tile.repeat, tile.repeat);
+  nTex.anisotropy = 8;
   normalCache.set(tile.id, nTex);
 
   return texture;
@@ -372,6 +713,42 @@ function getTileTexture(tile) {
 function getTileNormalMap(tile) {
   if (!normalCache.has(tile.id)) getTileTexture(tile);
   return normalCache.get(tile.id);
+}
+
+// Calcula el tamaño físico aproximado de un mesh en el mundo (metros)
+// usando sus dos dimensiones mayores (la superficie principal).
+function getMeshSurfaceSize(mesh) {
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const dims = [size.x, size.y, size.z].sort((a, b) => b - a);
+  return { u: Math.max(dims[0], 0.1), v: Math.max(dims[1], 0.1) };
+}
+
+// Clona las texturas cacheadas y ajusta repeat según tamaño real del mesh
+function buildMeshTextureSet(tile, mesh) {
+  const baseTex = getTileTexture(tile);
+  const baseNorm = getTileNormalMap(tile);
+  const { u, v } = getMeshSurfaceSize(mesh);
+  const ws = tile.worldSize || 2.0;
+  const ru = Math.max(0.25, u / ws);
+  const rv = Math.max(0.25, v / ws);
+
+  const tex = baseTex.clone();
+  tex.needsUpdate = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.repeat.set(ru, rv);
+
+  const norm = baseNorm.clone();
+  norm.needsUpdate = true;
+  norm.wrapS = THREE.RepeatWrapping;
+  norm.wrapT = THREE.RepeatWrapping;
+  norm.anisotropy = 8;
+  norm.repeat.set(ru, rv);
+
+  return { tex, norm };
 }
 
 function getTilePreviewDataURL(tile) {
@@ -1379,26 +1756,37 @@ function highlightAppliedTile() {
 // ────────────────────────────────────────────
 // Apply finishes (supports group + individual)
 // ────────────────────────────────────────────
-const ROUGHNESS_MAP = { marble: 0.15, wood: 0.45, stone: 0.65, concrete: 0.85, solid: 0.3 };
+const ROUGHNESS_MAP = {
+  marble: 0.15, wood: 0.45, stone: 0.65, concrete: 0.85, solid: 0.3,
+  brick: 0.85, metal: 0.25, fabric: 0.95, leather: 0.6, plaster: 0.8,
+  ceramic: 0.2, rust: 0.9, asphalt: 0.95, glass: 0.05, moss: 0.9,
+};
 
 function applyTileFinish(tile) {
   const indices = getSelectedMeshIndices();
   if (indices.length === 0) return;
 
-  const texture = getTileTexture(tile);
-  const normalMap = getTileNormalMap(tile);
   const previewURL = getTilePreviewDataURL(tile);
+  const metalTypes = { metal: 0.85, rust: 0.3, glass: 0.1 };
 
   indices.forEach(i => {
     const mesh = meshParts[i];
-    mesh.material.map = texture;
+    const { tex, norm } = buildMeshTextureSet(tile, mesh);
+    mesh.material.map = tex;
     mesh.material.color.set(0xffffff);
     if ('normalMap' in mesh.material) {
-      mesh.material.normalMap = normalMap;
+      mesh.material.normalMap = norm;
       mesh.material.normalScale = new THREE.Vector2(0.6, 0.6);
     }
     if ('roughness' in mesh.material) mesh.material.roughness = ROUGHNESS_MAP[tile.type] ?? 0.5;
-    if ('metalness' in mesh.material) mesh.material.metalness = 0.0;
+    if ('metalness' in mesh.material) mesh.material.metalness = metalTypes[tile.type] ?? 0.0;
+    if (tile.type === 'glass' && 'transparent' in mesh.material) {
+      mesh.material.transparent = true;
+      mesh.material.opacity = 0.6;
+    } else if ('transparent' in mesh.material) {
+      mesh.material.transparent = false;
+      mesh.material.opacity = 1.0;
+    }
     mesh.material.needsUpdate = true;
     appliedFinishes.set(mesh.uuid, { type: 'tile', tile });
     updatePartListItemByIndex(i, tile.name, previewURL);
@@ -1414,15 +1802,21 @@ function applyUploadedTexture(dataURL, texName) {
 
   const img = new Image();
   img.onload = () => {
-    const texture = new THREE.Texture(img);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2, 2);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-
+    const UPLOADED_WORLD_SIZE = 2.0;
     indices.forEach(i => {
       const mesh = meshParts[i];
+      const texture = new THREE.Texture(img);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      const { u, v } = getMeshSurfaceSize(mesh);
+      texture.repeat.set(
+        Math.max(0.25, u / UPLOADED_WORLD_SIZE),
+        Math.max(0.25, v / UPLOADED_WORLD_SIZE)
+      );
+      texture.needsUpdate = true;
+
       mesh.material.map = texture;
       if ('normalMap' in mesh.material) mesh.material.normalMap = null;
       mesh.material.color.set(0xffffff);
@@ -1649,19 +2043,19 @@ document.getElementById('btn-reset-colors').addEventListener('click', () => {
 
 document.getElementById('btn-randomize').addEventListener('click', () => {
   const allTiles = CATALOG.flatMap(c => c.tiles);
+  const metalTypes = { metal: 0.85, rust: 0.3, glass: 0.1 };
 
   meshParts.forEach((mesh, i) => {
     const tile = allTiles[Math.floor(Math.random() * allTiles.length)];
-    const texture = getTileTexture(tile);
-    const normalMap = getTileNormalMap(tile);
-    mesh.material.map = texture;
+    const { tex, norm } = buildMeshTextureSet(tile, mesh);
+    mesh.material.map = tex;
     mesh.material.color.set(0xffffff);
     if ('normalMap' in mesh.material) {
-      mesh.material.normalMap = normalMap;
+      mesh.material.normalMap = norm;
       mesh.material.normalScale = new THREE.Vector2(0.6, 0.6);
     }
     if ('roughness' in mesh.material) mesh.material.roughness = ROUGHNESS_MAP[tile.type] ?? 0.5;
-    if ('metalness' in mesh.material) mesh.material.metalness = 0.0;
+    if ('metalness' in mesh.material) mesh.material.metalness = metalTypes[tile.type] ?? 0.0;
     mesh.material.needsUpdate = true;
     appliedFinishes.set(mesh.uuid, { type: 'tile', tile });
     updatePartListItemByIndex(i, tile.name, getTilePreviewDataURL(tile));

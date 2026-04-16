@@ -861,15 +861,31 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
+// Locomoción VR (thumbstick): offset acumulado + rotación yaw
+let xrBaseReferenceSpace = null;
+const xrOffset = { x: 0, y: 0, z: 0 };
+let xrYaw = 0;
+let xrLastFrameTime = 0;
+let xrSnapTurnReady = true;
+const XR_MOVE_SPEED = 2.0;
+const XR_SNAP_ANGLE = Math.PI / 6;
+const XR_STICK_DEADZONE = 0.18;
+
 renderer.xr.addEventListener('sessionstart', () => {
   isInVR = true;
   orbitControls.enabled = false;
+  xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
+  xrOffset.x = 0; xrOffset.y = 0; xrOffset.z = 0;
+  xrYaw = 0;
+  xrLastFrameTime = 0;
+  xrSnapTurnReady = true;
 });
 
 renderer.xr.addEventListener('sessionend', () => {
   isInVR = false;
   orbitControls.enabled = true;
   closeVRPanel();
+  xrBaseReferenceSpace = null;
 });
 
 const controllerModelFactory = new XRControllerModelFactory();
@@ -1177,6 +1193,80 @@ function updateVRPointer() {
     }
   }
   vrPointerDot.visible = false;
+}
+
+// ────────────────────────────────────────────
+// WebXR: Locomoción con thumbsticks (stick izq = mover, stick der = girar)
+// ────────────────────────────────────────────
+const _xrForward = new THREE.Vector3();
+const _xrRight = new THREE.Vector3();
+const _xrUp = new THREE.Vector3(0, 1, 0);
+const _xrHeadQuat = new THREE.Quaternion();
+
+function updateXRLocomotion(now) {
+  if (!isInVR || !xrBaseReferenceSpace) return;
+
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  const dt = xrLastFrameTime ? Math.min(0.1, (now - xrLastFrameTime) / 1000) : 0;
+  xrLastFrameTime = now;
+  if (dt === 0) return;
+
+  let moveX = 0, moveZ = 0, turnX = 0;
+
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const axes = source.gamepad.axes;
+    if (!axes || axes.length < 4) continue;
+
+    // Quest touch controllers: axes[2]=stick X, axes[3]=stick Y
+    const sx = axes[2] || 0;
+    const sy = axes[3] || 0;
+
+    if (source.handedness === 'left') {
+      if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
+      if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
+    } else if (source.handedness === 'right') {
+      if (Math.abs(sx) > XR_STICK_DEADZONE) turnX += sx;
+    }
+  }
+
+  // Snap turn (stick derecho izq/der)
+  if (xrSnapTurnReady && Math.abs(turnX) > 0.7) {
+    xrYaw -= Math.sign(turnX) * XR_SNAP_ANGLE;
+    xrSnapTurnReady = false;
+  } else if (Math.abs(turnX) < 0.3) {
+    xrSnapTurnReady = true;
+  }
+
+  // Movimiento relativo a la dirección de la cabeza
+  if (moveX !== 0 || moveZ !== 0) {
+    const xrCam = renderer.xr.getCamera();
+    xrCam.getWorldQuaternion(_xrHeadQuat);
+    _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
+    _xrForward.y = 0;
+    if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
+    _xrForward.normalize();
+    _xrRight.crossVectors(_xrForward, _xrUp).normalize();
+
+    const speed = XR_MOVE_SPEED * dt;
+    const dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
+    const dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
+
+    // El offset del reference space va en sentido contrario al movimiento del jugador
+    xrOffset.x -= dx;
+    xrOffset.z -= dz;
+  }
+
+  // Aplica offset acumulado al reference space
+  const quat = new THREE.Quaternion().setFromAxisAngle(_xrUp, xrYaw);
+  const offsetTransform = new XRRigidTransform(
+    { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z, w: 1 },
+    { x: quat.x, y: quat.y, z: quat.z, w: quat.w }
+  );
+  const newRefSpace = xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform);
+  renderer.xr.setReferenceSpace(newRefSpace);
 }
 
 // ────────────────────────────────────────────
@@ -2106,7 +2196,7 @@ window.addEventListener('resize', () => {
 // ────────────────────────────────────────────
 // Animation loop (setAnimationLoop for WebXR)
 // ────────────────────────────────────────────
-function animate() {
+function animate(time) {
   scene.children
     .filter(c => c.userData.isHighlight)
     .forEach(c => {
@@ -2119,6 +2209,7 @@ function animate() {
     });
 
   if (isInVR) {
+    updateXRLocomotion(time || performance.now());
     updateVRPointer();
   } else {
     orbitControls.update();

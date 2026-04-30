@@ -978,11 +978,17 @@ const XR_MOVE_SPEED = 2.0;
 const XR_SNAP_ANGLE = Math.PI / 6;
 const XR_STICK_DEADZONE = 0.18;
 
+// VR Player height adjustment (positive = lower viewpoint, makes you "shorter")
+// Adjust this value if you feel too tall or too short in the apartment
+const VR_HEIGHT_OFFSET = 0.7;
+
 renderer.xr.addEventListener('sessionstart', () => {
   isInVR = true;
   orbitControls.enabled = false;
   xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
-  xrOffset.x = 0; xrOffset.y = 0; xrOffset.z = 0;
+  xrOffset.x = 0; 
+  xrOffset.y = VR_HEIGHT_OFFSET;  // Apply height offset to lower viewpoint
+  xrOffset.z = 0;
   xrYaw = 0;
   xrLastFrameTime = 0;
   xrSnapTurnReady = true;

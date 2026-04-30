@@ -7,6 +7,156 @@ import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 // ────────────────────────────────────────────
+// Audio System
+// ────────────────────────────────────────────
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let ambientGainNode = null;
+let uiGainNode = null;
+let ambientSource = null;
+let ambientBuffer = null;
+let uiBuffer = null;
+let audioInitialized = false;
+let ambientPlaying = false;
+
+function createAmbientMusic() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 30;
+  const numSamples = sampleRate * duration;
+  const buffer = audioContext.createBuffer(2, numSamples, sampleRate);
+  
+  const leftChannel = buffer.getChannelData(0);
+  const rightChannel = buffer.getChannelData(1);
+  
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    const baseFreq = 55;
+    
+    let sample = 0;
+    sample += Math.sin(2 * Math.PI * baseFreq * t) * 0.15;
+    sample += Math.sin(2 * Math.PI * baseFreq * 1.5 * t) * 0.08;
+    sample += Math.sin(2 * Math.PI * baseFreq * 2 * t) * 0.05;
+    sample += Math.sin(2 * Math.PI * baseFreq * 3 * t) * 0.03;
+    
+    const lfoFreq = 0.05;
+    const lfo = Math.sin(2 * Math.PI * lfoFreq * t) * 0.5 + 0.5;
+    sample += Math.sin(2 * Math.PI * (baseFreq * 4) * t) * 0.02 * lfo;
+    
+    const pad1 = Math.sin(2 * Math.PI * 110 * t + Math.sin(2 * Math.PI * 0.1 * t) * 2) * 0.04;
+    const pad2 = Math.sin(2 * Math.PI * 165 * t + Math.sin(2 * Math.PI * 0.08 * t) * 2) * 0.03;
+    const pad3 = Math.sin(2 * Math.PI * 220 * t + Math.sin(2 * Math.PI * 0.12 * t) * 2) * 0.02;
+    sample += pad1 + pad2 + pad3;
+    
+    const envelope = Math.min(1, t / 2) * Math.min(1, (duration - t) / 2);
+    sample *= envelope * 0.5;
+    
+    const stereoOffset = Math.sin(2 * Math.PI * 0.03 * t) * 0.3;
+    leftChannel[i] = sample * (1 - stereoOffset * 0.5);
+    rightChannel[i] = sample * (1 + stereoOffset * 0.5);
+  }
+  
+  return buffer;
+}
+
+function createUISound() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 0.3;
+  const numSamples = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
+  const channel = buffer.getChannelData(0);
+  
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    const envelope = Math.exp(-t * 12) * Math.min(1, t * 100);
+    
+    let sample = 0;
+    sample += Math.sin(2 * Math.PI * 880 * t) * 0.3;
+    sample += Math.sin(2 * Math.PI * 1320 * t) * 0.2;
+    sample += Math.sin(2 * Math.PI * 1760 * t) * 0.15;
+    sample += Math.sin(2 * Math.PI * 2200 * t) * 0.1;
+    
+    const sweep = 880 + (1 - Math.exp(-t * 20)) * 440;
+    sample += Math.sin(2 * Math.PI * sweep * t) * 0.2;
+    
+    channel[i] = sample * envelope * 0.4;
+  }
+  
+  return buffer;
+}
+
+function initAudio() {
+  if (audioInitialized) return;
+  
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+  
+  ambientGainNode = audioContext.createGain();
+  ambientGainNode.gain.value = 0.3;
+  ambientGainNode.connect(audioContext.destination);
+  
+  uiGainNode = audioContext.createGain();
+  uiGainNode.gain.value = 0.5;
+  uiGainNode.connect(audioContext.destination);
+  
+  ambientBuffer = createAmbientMusic();
+  uiBuffer = createUISound();
+  
+  audioInitialized = true;
+}
+
+function playAmbientMusic() {
+  if (!audioInitialized) initAudio();
+  if (ambientPlaying) return;
+  
+  ambientSource = audioContext.createBufferSource();
+  ambientSource.buffer = ambientBuffer;
+  ambientSource.loop = true;
+  ambientSource.connect(ambientGainNode);
+  ambientSource.start();
+  ambientPlaying = true;
+}
+
+function stopAmbientMusic() {
+  if (ambientSource && ambientPlaying) {
+    ambientSource.stop();
+    ambientPlaying = false;
+  }
+}
+
+function playUISound() {
+  if (!audioInitialized) initAudio();
+  
+  const source = audioContext.createBufferSource();
+  source.buffer = uiBuffer;
+  source.connect(uiGainNode);
+  source.start();
+}
+
+function setAmbientVolume(volume) {
+  if (ambientGainNode) {
+    ambientGainNode.gain.value = Math.max(0, Math.min(1, volume));
+  }
+}
+
+function setUIVolume(volume) {
+  if (uiGainNode) {
+    uiGainNode.gain.value = Math.max(0, Math.min(1, volume));
+  }
+}
+
+document.addEventListener('click', () => {
+  if (!audioInitialized) {
+    initAudio();
+  }
+}, { once: true });
+
+document.addEventListener('touchstart', () => {
+  if (!audioInitialized) {
+    initAudio();
+  }
+}, { once: true });
+
+// ────────────────────────────────────────────
 // Tile Catalog (Corona-style finishes)
 // ────────────────────────────────────────────
 // worldSize = tamaño físico en metros de un "tile" (1 repeat). Se usa para escalar
@@ -740,6 +890,110 @@ const uploadedTexEl = document.getElementById('uploaded-textures');
 const solidPicker   = document.getElementById('solid-color-picker');
 const colorHexLabel = document.getElementById('color-hex-label');
 const btnApplyColor = document.getElementById('btn-apply-color');
+
+// ────────────────────────────────────────────
+// Draggable UI Panel
+// ────────────────────────────────────────────
+const panelDragState = {
+  isDragging: false,
+  startX: 0,
+  startY: 0,
+  initialX: 0,
+  initialY: 0,
+  currentX: 0,
+  currentY: 0
+};
+
+function initDraggablePanel() {
+  const dragHandle = document.createElement('div');
+  dragHandle.className = 'panel-drag-handle';
+  dragHandle.innerHTML = `
+    <div class="drag-indicator">
+      <span></span><span></span><span></span>
+    </div>
+  `;
+  
+  const panelHeader = controlsEl.querySelector('.panel-header');
+  if (panelHeader) {
+    panelHeader.insertBefore(dragHandle, panelHeader.firstChild);
+  }
+  
+  dragHandle.addEventListener('mousedown', startDrag);
+  dragHandle.addEventListener('touchstart', startDrag, { passive: false });
+  
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('touchmove', onDrag, { passive: false });
+  
+  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('touchend', stopDrag);
+}
+
+function startDrag(e) {
+  if (window.innerWidth <= 768) return;
+  
+  e.preventDefault();
+  panelDragState.isDragging = true;
+  controlsEl.classList.add('dragging');
+  
+  const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+  const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+  
+  const rect = controlsEl.getBoundingClientRect();
+  panelDragState.initialX = rect.left;
+  panelDragState.initialY = rect.top;
+  panelDragState.startX = clientX;
+  panelDragState.startY = clientY;
+}
+
+function onDrag(e) {
+  if (!panelDragState.isDragging) return;
+  
+  e.preventDefault();
+  
+  const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+  const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+  
+  const deltaX = clientX - panelDragState.startX;
+  const deltaY = clientY - panelDragState.startY;
+  
+  let newX = panelDragState.initialX + deltaX;
+  let newY = panelDragState.initialY + deltaY;
+  
+  const panelRect = controlsEl.getBoundingClientRect();
+  const maxX = window.innerWidth - panelRect.width;
+  const maxY = window.innerHeight - panelRect.height;
+  
+  newX = Math.max(0, Math.min(newX, maxX));
+  newY = Math.max(0, Math.min(newY, maxY));
+  
+  panelDragState.currentX = newX;
+  panelDragState.currentY = newY;
+  
+  controlsEl.style.right = 'auto';
+  controlsEl.style.top = 'auto';
+  controlsEl.style.left = newX + 'px';
+  controlsEl.style.top = newY + 'px';
+}
+
+function stopDrag() {
+  if (!panelDragState.isDragging) return;
+  
+  panelDragState.isDragging = false;
+  controlsEl.classList.remove('dragging');
+}
+
+function resetPanelPosition() {
+  controlsEl.style.left = '';
+  controlsEl.style.top = '';
+  controlsEl.style.right = '';
+  panelDragState.currentX = 0;
+  panelDragState.currentY = 0;
+}
+
+document.addEventListener('DOMContentLoaded', initDraggablePanel);
+if (document.readyState !== 'loading') {
+  initDraggablePanel();
+}
 
 // ────────────────────────────────────────────
 // Renderer
@@ -1501,6 +1755,14 @@ function processModel(gltf, filename) {
   partsSearch.value = '';
   showPartsView();
 
+  initAudio();
+  playAmbientMusic();
+  
+  const audioToggle = document.getElementById('audio-toggle');
+  if (audioToggle) {
+    audioToggle.classList.add('active');
+  }
+
   setTimeout(() => { hintEl.style.opacity = '0'; }, 6000);
 }
 
@@ -1710,6 +1972,8 @@ function selectMeshAndShowFinishes(mesh, index) {
   showFinishView();
   highlightAppliedTile();
 
+  playUISound();
+
   const currentColor = mesh.material?.color ? '#' + mesh.material.color.getHexString() : '#cccccc';
   solidPicker.value = currentColor;
   colorHexLabel.textContent = currentColor.toUpperCase();
@@ -1747,6 +2011,8 @@ function selectGroupAndShowFinishes(group) {
   updateSelectedPartPreview();
   showFinishView();
   highlightAppliedTile();
+
+  playUISound();
 
   const currentColor = selectedMesh?.material?.color ? '#' + selectedMesh.material.color.getHexString() : '#cccccc';
   solidPicker.value = currentColor;
@@ -2209,6 +2475,13 @@ document.getElementById('btn-load-new').addEventListener('click', () => {
   fileInput.value = '';
   panelToggle.setAttribute('aria-expanded', 'false');
   showPartsView();
+  resetPanelPosition();
+  
+  stopAmbientMusic();
+  const audioToggle = document.getElementById('audio-toggle');
+  if (audioToggle) {
+    audioToggle.classList.remove('active');
+  }
 });
 
 // ────────────────────────────────────────────
@@ -2238,6 +2511,7 @@ function animate(time) {
   if (isInVR) {
     updateXRLocomotion(time || performance.now());
     updateVRPointer();
+    updateVRDrag();
   } else {
     orbitControls.update();
   }
@@ -2269,3 +2543,24 @@ function loadDefaultModel() {
 }
 
 document.getElementById('btn-load-default').addEventListener('click', loadDefaultModel);
+
+// ────────────────────────────────────────────
+// Audio Toggle
+// ────────────────────────────────────────────
+const audioToggleBtn = document.getElementById('audio-toggle');
+let audioMuted = false;
+
+if (audioToggleBtn) {
+  audioToggleBtn.addEventListener('click', () => {
+    audioMuted = !audioMuted;
+    audioToggleBtn.classList.toggle('muted', audioMuted);
+    
+    if (audioMuted) {
+      setAmbientVolume(0);
+      setUIVolume(0);
+    } else {
+      setAmbientVolume(0.3);
+      setUIVolume(0.5);
+    }
+  });
+}

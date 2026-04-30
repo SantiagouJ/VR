@@ -419,59 +419,6 @@ button:focus:not(:focus-visible) { outline: none; }
   flex-shrink: 0;
 }
 
-/* Draggable Panel Handle */
-.panel-drag-handle {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 12px;
-  cursor: grab;
-  margin: -24px -24px 16px;
-  padding-top: 16px;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  transition: background var(--transition-fast);
-}
-
-.panel-drag-handle:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.panel-drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-indicator {
-  display: flex;
-  gap: 3px;
-}
-
-.drag-indicator span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--color-text-tertiary);
-  transition: background var(--transition-fast);
-}
-
-.panel-drag-handle:hover .drag-indicator span {
-  background: var(--color-text-secondary);
-}
-
-#controls.dragging {
-  cursor: grabbing;
-  user-select: none;
-  transition: none;
-  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--color-border-hover);
-}
-
-#controls.dragging .panel-drag-handle {
-  cursor: grabbing;
-}
-
-@media (max-width: 768px) {
-  .panel-drag-handle {
-    display: none;
-  }
-}
 
 .panel-title-row {
   display: flex;

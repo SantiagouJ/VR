@@ -891,109 +891,6 @@ const solidPicker   = document.getElementById('solid-color-picker');
 const colorHexLabel = document.getElementById('color-hex-label');
 const btnApplyColor = document.getElementById('btn-apply-color');
 
-// ────────────────────────────────────────────
-// Draggable UI Panel
-// ────────────────────────────────────────────
-const panelDragState = {
-  isDragging: false,
-  startX: 0,
-  startY: 0,
-  initialX: 0,
-  initialY: 0,
-  currentX: 0,
-  currentY: 0
-};
-
-function initDraggablePanel() {
-  const dragHandle = document.createElement('div');
-  dragHandle.className = 'panel-drag-handle';
-  dragHandle.innerHTML = `
-    <div class="drag-indicator">
-      <span></span><span></span><span></span>
-    </div>
-  `;
-  
-  const panelHeader = controlsEl.querySelector('.panel-header');
-  if (panelHeader) {
-    panelHeader.insertBefore(dragHandle, panelHeader.firstChild);
-  }
-  
-  dragHandle.addEventListener('mousedown', startDrag);
-  dragHandle.addEventListener('touchstart', startDrag, { passive: false });
-  
-  document.addEventListener('mousemove', onDrag);
-  document.addEventListener('touchmove', onDrag, { passive: false });
-  
-  document.addEventListener('mouseup', stopDrag);
-  document.addEventListener('touchend', stopDrag);
-}
-
-function startDrag(e) {
-  if (window.innerWidth <= 768) return;
-  
-  e.preventDefault();
-  panelDragState.isDragging = true;
-  controlsEl.classList.add('dragging');
-  
-  const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
-  const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
-  
-  const rect = controlsEl.getBoundingClientRect();
-  panelDragState.initialX = rect.left;
-  panelDragState.initialY = rect.top;
-  panelDragState.startX = clientX;
-  panelDragState.startY = clientY;
-}
-
-function onDrag(e) {
-  if (!panelDragState.isDragging) return;
-  
-  e.preventDefault();
-  
-  const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
-  const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-  
-  const deltaX = clientX - panelDragState.startX;
-  const deltaY = clientY - panelDragState.startY;
-  
-  let newX = panelDragState.initialX + deltaX;
-  let newY = panelDragState.initialY + deltaY;
-  
-  const panelRect = controlsEl.getBoundingClientRect();
-  const maxX = window.innerWidth - panelRect.width;
-  const maxY = window.innerHeight - panelRect.height;
-  
-  newX = Math.max(0, Math.min(newX, maxX));
-  newY = Math.max(0, Math.min(newY, maxY));
-  
-  panelDragState.currentX = newX;
-  panelDragState.currentY = newY;
-  
-  controlsEl.style.right = 'auto';
-  controlsEl.style.top = 'auto';
-  controlsEl.style.left = newX + 'px';
-  controlsEl.style.top = newY + 'px';
-}
-
-function stopDrag() {
-  if (!panelDragState.isDragging) return;
-  
-  panelDragState.isDragging = false;
-  controlsEl.classList.remove('dragging');
-}
-
-function resetPanelPosition() {
-  controlsEl.style.left = '';
-  controlsEl.style.top = '';
-  controlsEl.style.right = '';
-  panelDragState.currentX = 0;
-  panelDragState.currentY = 0;
-}
-
-document.addEventListener('DOMContentLoaded', initDraggablePanel);
-if (document.readyState !== 'loading') {
-  initDraggablePanel();
-}
 
 // ────────────────────────────────────────────
 // Renderer
@@ -1089,6 +986,15 @@ renderer.xr.addEventListener('sessionstart', () => {
   xrYaw = 0;
   xrLastFrameTime = 0;
   xrSnapTurnReady = true;
+  
+  // Resume audio context and play ambient music in VR
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+  if (loadedModel && !ambientPlaying) {
+    initAudio();
+    playAmbientMusic();
+  }
 });
 
 renderer.xr.addEventListener('sessionend', () => {
@@ -1198,19 +1104,38 @@ function renderVRPanel() {
   ctx.lineWidth = 2;
   ctx.stroke();
 
+  // Drag handle indicator at top
+  const handleY = 12;
+  const handleW = 60;
+  const handleH = 6;
+  const handleX = (W - handleW) / 2;
+  drawRoundRect(ctx, handleX, handleY, handleW, handleH, 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fill();
+  
+  // Grip instruction text
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '12px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Grip para mover', W / 2, 22);
+  ctx.textAlign = 'left';
+
   ctx.fillStyle = '#f0f0f5';
   ctx.font = 'bold 26px Inter, system-ui, sans-serif';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Acabados y Texturas', 30, 34);
+  ctx.fillText('Acabados y Texturas', 30, 55);
 
-  drawRoundRect(ctx, W - 65, 12, 48, 42, 10);
+  // Close button
+  drawRoundRect(ctx, W - 65, 40, 48, 42, 10);
   ctx.fillStyle = 'rgba(239,154,154,0.12)';
   ctx.fill();
   ctx.fillStyle = '#ef9a9a';
   ctx.font = 'bold 26px system-ui';
-  ctx.fillText('✕', W - 50, 36);
-  vrPanelRegions.close = { x: W - 65, y: 12, w: 48, h: 42 };
+  ctx.fillText('✕', W - 50, 64);
+  vrPanelRegions.close = { x: W - 65, y: 40, w: 48, h: 42 };
 
+  // Category chips
   ctx.font = '600 15px Inter, system-ui, sans-serif';
   ctx.textBaseline = 'middle';
   let cx = 30;
@@ -1219,7 +1144,7 @@ function renderVRPanel() {
     const tw = ctx.measureText(cat.cat).width + 28;
     const isActive = cat.cat === vrPanelActiveCategory;
 
-    drawRoundRect(ctx, cx, 66, tw, 32, 16);
+    drawRoundRect(ctx, cx, 90, tw, 32, 16);
     ctx.fillStyle = isActive ? 'rgba(100,181,246,0.2)' : 'rgba(255,255,255,0.05)';
     ctx.fill();
     if (isActive) {
@@ -1229,14 +1154,14 @@ function renderVRPanel() {
     }
 
     ctx.fillStyle = isActive ? '#64B5F6' : 'rgba(255,255,255,0.5)';
-    ctx.fillText(cat.cat, cx + 14, 82);
+    ctx.fillText(cat.cat, cx + 14, 106);
 
-    vrPanelRegions.categories.push({ x: cx, y: 66, w: tw, h: 32, cat: cat.cat });
+    vrPanelRegions.categories.push({ x: cx, y: 90, w: tw, h: 32, cat: cat.cat });
     cx += tw + 10;
   });
 
   const tiles = CATALOG.find(c => c.cat === vrPanelActiveCategory)?.tiles || [];
-  const cols = 3, tileSize = 140, gap = 22, startX = 30, startY = 118;
+  const cols = 3, tileSize = 140, gap = 22, startX = 30, startY = 140;
 
   const selIndices = getSelectedMeshIndices();
   const appliedTileId = selIndices.length > 0
@@ -1400,13 +1325,10 @@ function startDraggingMesh(mesh, controller) {
   vrDragState.controller = controller;
   mesh.userData.userMoved = true;
 
-  if (mesh === vrModeBtnMesh) {
-    mesh.userData.detachedFromWrist = true;
-  }
-
-  // Guarda transform del mesh relativo al controlador
   const ctrlInv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
   vrDragState.offsetMatrix.copy(mesh.matrixWorld).premultiply(ctrlInv);
+  
+  playUISound();
 }
 
 function stopDraggingMesh() {
@@ -1429,16 +1351,7 @@ function onXRSqueezeStart(event) {
   const controller = event.target;
   const rc = getXRRay(controller);
 
-  // Prioridad 1: agarrar el botón de modo (si está visible)
-  if (vrModeBtnMesh.visible) {
-    const btnHits = rc.intersectObject(vrModeBtnMesh);
-    if (btnHits.length > 0) {
-      startDraggingMesh(vrModeBtnMesh, controller);
-      return;
-    }
-  }
-
-  // Prioridad 2: agarrar el panel principal (si está visible)
+  // Grab the VR panel if visible and pointing at it
   if (vrPanelVisible) {
     const panelHits = rc.intersectObject(vrPanelMesh);
     if (panelHits.length > 0) {
@@ -1447,9 +1360,12 @@ function onXRSqueezeStart(event) {
     }
   }
 
-  // Fallback: comportamiento original (abrir/cerrar panel)
-  if (vrPanelVisible) closeVRPanel();
-  else if (selectedMesh || selectedGroup) openVRPanel();
+  // If not grabbing the panel, toggle it
+  if (vrPanelVisible) {
+    closeVRPanel();
+  } else if (selectedMesh || selectedGroup) {
+    openVRPanel();
+  }
 }
 
 function onXRSqueezeEnd() {
@@ -2475,7 +2391,6 @@ document.getElementById('btn-load-new').addEventListener('click', () => {
   fileInput.value = '';
   panelToggle.setAttribute('aria-expanded', 'false');
   showPartsView();
-  resetPanelPosition();
   
   stopAmbientMusic();
   const audioToggle = document.getElementById('audio-toggle');

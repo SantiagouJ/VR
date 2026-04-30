@@ -1058,12 +1058,20 @@ renderer.xr.addEventListener('sessionstart', () => {
     initAudio();
     playAmbientMusic();
   }
+  
+  // Show VR tutorial after a short delay
+  if (loadedModel) {
+    setTimeout(() => {
+      openVRTutorial();
+    }, 500);
+  }
 });
 
 renderer.xr.addEventListener('sessionend', () => {
   isInVR = false;
   orbitControls.enabled = true;
   closeVRPanel();
+  closeVRTutorial();
   xrBaseReferenceSpace = null;
 });
 
@@ -1143,6 +1151,238 @@ const vrPointerDot = new THREE.Mesh(
 vrPointerDot.visible = false;
 vrPointerDot.renderOrder = 999;
 scene.add(vrPointerDot);
+
+// ────────────────────────────────────────────
+// VR Tutorial Panel
+// ────────────────────────────────────────────
+const VR_TUTORIAL_W = 700;
+const VR_TUTORIAL_H = 500;
+const VR_TUTORIAL_SCALE_X = 0.8;
+const VR_TUTORIAL_SCALE_Y = VR_TUTORIAL_SCALE_X * (VR_TUTORIAL_H / VR_TUTORIAL_W);
+
+let vrTutorialVisible = false;
+let vrTutorialDismissRegion = null;
+
+const vrTutorialCanvas = document.createElement('canvas');
+vrTutorialCanvas.width = VR_TUTORIAL_W;
+vrTutorialCanvas.height = VR_TUTORIAL_H;
+const vrTutorialCtx = vrTutorialCanvas.getContext('2d');
+
+const vrTutorialTexture = new THREE.CanvasTexture(vrTutorialCanvas);
+vrTutorialTexture.colorSpace = THREE.SRGBColorSpace;
+
+const vrTutorialMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(VR_TUTORIAL_SCALE_X, VR_TUTORIAL_SCALE_Y),
+  new THREE.MeshBasicMaterial({ map: vrTutorialTexture, transparent: true, side: THREE.DoubleSide })
+);
+vrTutorialMesh.visible = false;
+vrTutorialMesh.userData.isVRTutorial = true;
+scene.add(vrTutorialMesh);
+
+function renderVRTutorial() {
+  const ctx = vrTutorialCtx;
+  const W = VR_TUTORIAL_W, H = VR_TUTORIAL_H;
+  
+  ctx.clearRect(0, 0, W, H);
+  
+  // Background
+  ctx.beginPath();
+  ctx.roundRect(0, 0, W, H, 20);
+  ctx.fillStyle = 'rgba(14, 14, 30, 0.98)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(100, 181, 246, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  // Title
+  ctx.fillStyle = '#64B5F6';
+  ctx.font = 'bold 32px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Controles VR - Meta Quest Pro', W / 2, 45);
+  
+  // Divider
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(40, 80);
+  ctx.lineTo(W - 40, 80);
+  ctx.stroke();
+  
+  // Controls list
+  const controls = [
+    { icon: '🎯', title: 'Trigger (Gatillo)', desc: 'Seleccionar superficies y elementos del menú' },
+    { icon: '✊', title: 'Grip (Agarre)', desc: 'Sostener y mover el panel de materiales' },
+    { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverse por el apartamento' },
+    { icon: '🔄', title: 'Stick Derecho', desc: 'Girar la vista (rotación)' },
+    { icon: '👆', title: 'Apuntar', desc: 'Apunta a superficies para ver el rayo láser' },
+  ];
+  
+  ctx.textAlign = 'left';
+  let y = 110;
+  const lineHeight = 70;
+  
+  controls.forEach(ctrl => {
+    // Icon
+    ctx.font = '28px sans-serif';
+    ctx.fillText(ctrl.icon, 50, y + 20);
+    
+    // Title
+    ctx.fillStyle = '#f0f0f5';
+    ctx.font = 'bold 20px Inter, system-ui, sans-serif';
+    ctx.fillText(ctrl.title, 100, y + 10);
+    
+    // Description
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '16px Inter, system-ui, sans-serif';
+    ctx.fillText(ctrl.desc, 100, y + 38);
+    
+    y += lineHeight;
+  });
+  
+  // Dismiss button
+  const btnW = 200, btnH = 50;
+  const btnX = (W - btnW) / 2;
+  const btnY = H - 70;
+  
+  ctx.beginPath();
+  ctx.roundRect(btnX, btnY, btnW, btnH, 12);
+  ctx.fillStyle = 'rgba(100, 181, 246, 0.2)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(100, 181, 246, 0.5)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  ctx.fillStyle = '#64B5F6';
+  ctx.font = 'bold 18px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Entendido', W / 2, btnY + btnH / 2 + 2);
+  
+  vrTutorialDismissRegion = { x: btnX, y: btnY, w: btnW, h: btnH };
+  
+  // Hint at bottom
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '13px Inter, system-ui, sans-serif';
+  ctx.fillText('Presiona Trigger en "Entendido" para cerrar', W / 2, H - 15);
+  
+  vrTutorialTexture.needsUpdate = true;
+}
+
+function openVRTutorial() {
+  const xrCam = renderer.xr.getCamera();
+  const pos = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  xrCam.getWorldPosition(pos);
+  xrCam.getWorldDirection(dir);
+  
+  dir.y = 0;
+  dir.normalize();
+  
+  vrTutorialMesh.position.copy(pos).addScaledVector(dir, 1.2);
+  vrTutorialMesh.position.y = pos.y + 0.1;
+  vrTutorialMesh.lookAt(pos.x, vrTutorialMesh.position.y, pos.z);
+  
+  vrTutorialMesh.visible = true;
+  vrTutorialVisible = true;
+  renderVRTutorial();
+}
+
+function closeVRTutorial() {
+  vrTutorialMesh.visible = false;
+  vrTutorialVisible = false;
+}
+
+function handleVRTutorialHit(uv) {
+  const x = uv.x * VR_TUTORIAL_W;
+  const y = (1 - uv.y) * VR_TUTORIAL_H;
+  
+  if (vrTutorialDismissRegion) {
+    const r = vrTutorialDismissRegion;
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+      closeVRTutorial();
+      playUISound();
+      return true;
+    }
+  }
+  return false;
+}
+
+// ────────────────────────────────────────────
+// VR Wall Collision Detection
+// ────────────────────────────────────────────
+const VR_COLLISION_DISTANCE = 0.3;  // Distance from walls to stop
+const VR_COLLISION_RAYS = 8;        // Number of rays to cast around player
+const _collisionRaycaster = new THREE.Raycaster();
+const _collisionDirection = new THREE.Vector3();
+
+function checkVRCollision(proposedOffset) {
+  if (!loadedModel || meshParts.length === 0) return proposedOffset;
+  
+  const xrCam = renderer.xr.getCamera();
+  const playerPos = new THREE.Vector3();
+  xrCam.getWorldPosition(playerPos);
+  
+  // Calculate proposed new position
+  const newX = playerPos.x - proposedOffset.x;
+  const newZ = playerPos.z - proposedOffset.z;
+  
+  // Cast rays in multiple directions to detect walls
+  const rayOrigin = new THREE.Vector3(newX, playerPos.y - 0.3, newZ);
+  
+  // Check collision in the movement direction
+  const moveDir = new THREE.Vector3(-proposedOffset.x, 0, -proposedOffset.z);
+  if (moveDir.lengthSq() < 0.0001) return proposedOffset;
+  moveDir.normalize();
+  
+  _collisionRaycaster.set(rayOrigin, moveDir);
+  _collisionRaycaster.far = VR_COLLISION_DISTANCE + 0.2;
+  
+  const hits = _collisionRaycaster.intersectObjects(meshParts, true);
+  
+  for (const hit of hits) {
+    // Check if this is likely a wall (vertical surface)
+    if (hit.face) {
+      const normal = hit.face.normal.clone();
+      normal.transformDirection(hit.object.matrixWorld);
+      
+      // If the surface is mostly vertical (wall-like)
+      if (Math.abs(normal.y) < 0.5) {
+        if (hit.distance < VR_COLLISION_DISTANCE) {
+          // Block movement in this direction
+          return { x: 0, y: proposedOffset.y, z: 0 };
+        }
+      }
+    }
+  }
+  
+  // Also check with additional rays for corners
+  for (let i = 0; i < VR_COLLISION_RAYS; i++) {
+    const angle = (i / VR_COLLISION_RAYS) * Math.PI * 2;
+    _collisionDirection.set(Math.cos(angle), 0, Math.sin(angle));
+    
+    _collisionRaycaster.set(rayOrigin, _collisionDirection);
+    _collisionRaycaster.far = VR_COLLISION_DISTANCE;
+    
+    const rayHits = _collisionRaycaster.intersectObjects(meshParts, true);
+    
+    for (const hit of rayHits) {
+      if (hit.face) {
+        const normal = hit.face.normal.clone();
+        normal.transformDirection(hit.object.matrixWorld);
+        
+        if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE * 0.8) {
+          // We're too close to a wall, prevent movement towards it
+          const dotProduct = moveDir.dot(_collisionDirection);
+          if (dotProduct > 0.3) {
+            return { x: 0, y: proposedOffset.y, z: 0 };
+          }
+        }
+      }
+    }
+  }
+  
+  return proposedOffset;
+}
 
 function drawRoundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -1367,6 +1607,16 @@ function onXRSelectStart(event) {
   const controller = event.target;
   const rc = getXRRay(controller);
 
+  // Check tutorial panel first
+  if (vrTutorialVisible) {
+    const tutorialHits = rc.intersectObject(vrTutorialMesh);
+    if (tutorialHits.length > 0) {
+      if (handleVRTutorialHit(tutorialHits[0].uv)) {
+        return;
+      }
+    }
+  }
+
   if (vrPanelVisible) {
     const panelHits = rc.intersectObject(vrPanelMesh);
     if (panelHits.length > 0) {
@@ -1453,20 +1703,36 @@ function onXRSqueezeEnd() {
 }
 
 function updateVRPointer() {
-  if (!isInVR || !vrPanelVisible) {
+  if (!isInVR || (!vrPanelVisible && !vrTutorialVisible)) {
     vrPointerDot.visible = false;
     return;
   }
 
   for (const { ctrl } of xrControllers) {
     const rc = getXRRay(ctrl);
-    const hits = rc.intersectObject(vrPanelMesh);
-    if (hits.length > 0) {
-      vrPointerDot.position.copy(hits[0].point);
-      vrPointerDot.quaternion.copy(vrPanelMesh.quaternion);
-      vrPointerDot.position.addScaledVector(vrPanelMesh.getWorldDirection(new THREE.Vector3()), 0.002);
-      vrPointerDot.visible = true;
-      return;
+    
+    // Check tutorial panel first
+    if (vrTutorialVisible) {
+      const tutorialHits = rc.intersectObject(vrTutorialMesh);
+      if (tutorialHits.length > 0) {
+        vrPointerDot.position.copy(tutorialHits[0].point);
+        vrPointerDot.quaternion.copy(vrTutorialMesh.quaternion);
+        vrPointerDot.position.addScaledVector(vrTutorialMesh.getWorldDirection(new THREE.Vector3()), 0.002);
+        vrPointerDot.visible = true;
+        return;
+      }
+    }
+    
+    // Check main panel
+    if (vrPanelVisible) {
+      const hits = rc.intersectObject(vrPanelMesh);
+      if (hits.length > 0) {
+        vrPointerDot.position.copy(hits[0].point);
+        vrPointerDot.quaternion.copy(vrPanelMesh.quaternion);
+        vrPointerDot.position.addScaledVector(vrPanelMesh.getWorldDirection(new THREE.Vector3()), 0.002);
+        vrPointerDot.visible = true;
+        return;
+      }
     }
   }
   vrPointerDot.visible = false;
@@ -1528,8 +1794,14 @@ function updateXRLocomotion(now) {
     _xrRight.crossVectors(_xrForward, _xrUp).normalize();
 
     const speed = XR_MOVE_SPEED * dt;
-    const dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
-    const dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
+    let dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
+    let dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
+
+    // Apply wall collision detection
+    const proposedMove = { x: dx, y: 0, z: dz };
+    const allowedMove = checkVRCollision(proposedMove);
+    dx = allowedMove.x;
+    dz = allowedMove.z;
 
     // El offset del reference space va en sentido contrario al movimiento del jugador
     xrOffset.x -= dx;

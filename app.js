@@ -220,6 +220,60 @@ const GROUP_KEYWORDS = [
 ];
 
 // ────────────────────────────────────────────
+// Surface-to-Material Category Mapping
+// ────────────────────────────────────────────
+// Defines which material categories are appropriate for each surface type
+const SURFACE_MATERIALS = {
+  'Pisos':      ['Madera', 'Cerámica', 'Mármol'],
+  'Paredes':    ['Ladrillo', 'Cerámica', 'Mármol'],
+  'Techos':     ['Madera', 'Cerámica'],
+  'Cocina':     ['Mármol', 'Cerámica', 'Vidrio'],
+  'Baño':       ['Cerámica', 'Mármol', 'Vidrio'],
+  'Ventanas':   ['Vidrio'],
+  'Puertas':    ['Madera'],
+  'Escaleras':  ['Madera', 'Mármol', 'Cerámica'],
+  'Estructura': ['Mármol', 'Ladrillo', 'Cerámica'],
+  'Exterior':   ['Cerámica', 'Madera', 'Ladrillo'],
+  'Muebles':    ['Madera', 'Vidrio', 'Mármol'],
+  'Molduras':   ['Madera', 'Mármol'],
+  'default':    ['Madera', 'Ladrillo', 'Cerámica', 'Mármol', 'Vidrio']  // All categories
+};
+
+// Determine the surface type from a mesh name
+function getSurfaceType(meshName) {
+  if (!meshName) return null;
+  const rawName = meshName.toLowerCase().replace(/_/g, ' ').replace(/\./g, ' ');
+  
+  for (const gk of GROUP_KEYWORDS) {
+    if (gk.keywords.some(kw => rawName.includes(kw))) {
+      return gk.label;
+    }
+  }
+  return null;
+}
+
+// Get the surface type for the current selection (mesh or group)
+function getSelectedSurfaceType() {
+  if (selectedGroup && selectedGroup.name) {
+    return selectedGroup.name;
+  }
+  if (selectedMesh) {
+    return getSurfaceType(selectedMesh.name);
+  }
+  return null;
+}
+
+// Get filtered catalog categories based on current selection
+function getFilteredCategories() {
+  const surfaceType = getSelectedSurfaceType();
+  const allowedCategories = SURFACE_MATERIALS[surfaceType] || SURFACE_MATERIALS['default'];
+  return CATALOG.filter(cat => allowedCategories.includes(cat.cat));
+}
+
+// Track the current filtered active category
+let filteredActiveCategory = null;
+
+// ────────────────────────────────────────────
 // Procedural texture generation (noise-based)
 // ────────────────────────────────────────────
 function seededRandom(seed) {
@@ -830,14 +884,17 @@ function getMeshSurfaceSize(mesh) {
   return { u: Math.max(dims[0], 0.1), v: Math.max(dims[1], 0.1) };
 }
 
+// Global texture scale factor - increase to make textures appear bigger (less repetition)
+const TEXTURE_SCALE = 15;
+
 // Clona las texturas cacheadas y ajusta repeat según tamaño real del mesh
 function buildMeshTextureSet(tile, mesh) {
   const baseTex = getTileTexture(tile);
   const baseNorm = getTileNormalMap(tile);
   const { u, v } = getMeshSurfaceSize(mesh);
-  const ws = tile.worldSize || 2.0;
-  const ru = Math.max(0.25, u / ws);
-  const rv = Math.max(0.25, v / ws);
+  const ws = (tile.worldSize || 2.0) * TEXTURE_SCALE;
+  const ru = Math.max(0.1, u / ws);
+  const rv = Math.max(0.1, v / ws);
 
   const tex = baseTex.clone();
   tex.needsUpdate = true;
@@ -1141,16 +1198,33 @@ function renderVRPanel() {
   ctx.fillText('✕', W - 50, 64);
   vrPanelRegions.close = { x: W - 65, y: 40, w: 48, h: 42 };
 
+  // Surface type indicator
+  const surfaceType = getSelectedSurfaceType();
+  if (surfaceType) {
+    ctx.fillStyle = 'rgba(100,181,246,0.4)';
+    ctx.font = '13px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`Materiales para: ${surfaceType}`, 30, 80);
+  }
+
+  // Get filtered categories for this surface type
+  const filteredCatalog = getFilteredCategories();
+  
+  // Reset active category if not in filtered list
+  if (!filteredCatalog.find(c => c.cat === vrPanelActiveCategory)) {
+    vrPanelActiveCategory = filteredCatalog.length > 0 ? filteredCatalog[0].cat : CATALOG[0].cat;
+  }
+
   // Category chips
   ctx.font = '600 15px Inter, system-ui, sans-serif';
   ctx.textBaseline = 'middle';
   let cx = 30;
   vrPanelRegions.categories = [];
-  CATALOG.forEach(cat => {
+  filteredCatalog.forEach(cat => {
     const tw = ctx.measureText(cat.cat).width + 28;
     const isActive = cat.cat === vrPanelActiveCategory;
 
-    drawRoundRect(ctx, cx, 90, tw, 32, 16);
+    drawRoundRect(ctx, cx, 100, tw, 32, 16);
     ctx.fillStyle = isActive ? 'rgba(100,181,246,0.2)' : 'rgba(255,255,255,0.05)';
     ctx.fill();
     if (isActive) {
@@ -1160,14 +1234,14 @@ function renderVRPanel() {
     }
 
     ctx.fillStyle = isActive ? '#64B5F6' : 'rgba(255,255,255,0.5)';
-    ctx.fillText(cat.cat, cx + 14, 106);
+    ctx.fillText(cat.cat, cx + 14, 116);
 
-    vrPanelRegions.categories.push({ x: cx, y: 90, w: tw, h: 32, cat: cat.cat });
+    vrPanelRegions.categories.push({ x: cx, y: 100, w: tw, h: 32, cat: cat.cat });
     cx += tw + 10;
   });
 
-  const tiles = CATALOG.find(c => c.cat === vrPanelActiveCategory)?.tiles || [];
-  const cols = 3, tileSize = 140, gap = 22, startX = 30, startY = 140;
+  const tiles = filteredCatalog.find(c => c.cat === vrPanelActiveCategory)?.tiles || [];
+  const cols = 3, tileSize = 140, gap = 22, startX = 30, startY = 150;
 
   const selIndices = getSelectedMeshIndices();
   const appliedTileId = selIndices.length > 0
@@ -1892,6 +1966,7 @@ function selectMeshAndShowFinishes(mesh, index) {
 
   updateSelectedPartPreview();
   showFinishView();
+  updateFilteredCatalogUI();
   highlightAppliedTile();
 
   playUISound();
@@ -1932,6 +2007,7 @@ function selectGroupAndShowFinishes(group) {
 
   updateSelectedPartPreview();
   showFinishView();
+  updateFilteredCatalogUI();
   highlightAppliedTile();
 
   playUISound();
@@ -2002,8 +2078,28 @@ document.querySelectorAll('.finish-tab').forEach(tab => {
 // Catalog UI
 // ────────────────────────────────────────────
 function buildCatalogUI() {
+  updateFilteredCatalogUI();
+}
+
+function updateFilteredCatalogUI() {
   categoryChips.innerHTML = '';
-  CATALOG.forEach(cat => {
+  const filteredCatalog = getFilteredCategories();
+  
+  // Reset active category if it's not in the filtered list
+  if (!filteredCatalog.find(c => c.cat === activeCategory)) {
+    activeCategory = filteredCatalog.length > 0 ? filteredCatalog[0].cat : null;
+  }
+  
+  // Show surface type indicator
+  const surfaceType = getSelectedSurfaceType();
+  if (surfaceType) {
+    const indicator = document.createElement('div');
+    indicator.className = 'surface-indicator';
+    indicator.innerHTML = `<span class="surface-label">Materiales para: <strong>${surfaceType}</strong></span>`;
+    categoryChips.appendChild(indicator);
+  }
+  
+  filteredCatalog.forEach(cat => {
     const chip = document.createElement('button');
     chip.className = 'category-chip' + (cat.cat === activeCategory ? ' active' : '');
     chip.textContent = cat.cat;
@@ -2020,7 +2116,8 @@ function buildCatalogUI() {
 
 function renderTileGrid() {
   tileGrid.innerHTML = '';
-  const category = CATALOG.find(c => c.cat === activeCategory);
+  const filteredCatalog = getFilteredCategories();
+  const category = filteredCatalog.find(c => c.cat === activeCategory);
   if (!category) return;
 
   category.tiles.forEach(tile => {
@@ -2107,7 +2204,7 @@ function applyUploadedTexture(dataURL, texName) {
 
   const img = new Image();
   img.onload = () => {
-    const UPLOADED_WORLD_SIZE = 2.0;
+    const UPLOADED_WORLD_SIZE = 2.0 * TEXTURE_SCALE;
     indices.forEach(i => {
       const mesh = meshParts[i];
       const texture = new THREE.Texture(img);
@@ -2117,8 +2214,8 @@ function applyUploadedTexture(dataURL, texName) {
       texture.anisotropy = 8;
       const { u, v } = getMeshSurfaceSize(mesh);
       texture.repeat.set(
-        Math.max(0.25, u / UPLOADED_WORLD_SIZE),
-        Math.max(0.25, v / UPLOADED_WORLD_SIZE)
+        Math.max(0.1, u / UPLOADED_WORLD_SIZE),
+        Math.max(0.1, v / UPLOADED_WORLD_SIZE)
       );
       texture.needsUpdate = true;
 
@@ -2444,7 +2541,7 @@ renderer.setAnimationLoop(animate);
 // ────────────────────────────────────────────
 // Load default model
 // ────────────────────────────────────────────
-const DEFAULT_MODEL = 'apto modelado.glb';
+const DEFAULT_MODEL = 'escAparates.glb';
 
 function loadDefaultModel() {
   showLoading(true);

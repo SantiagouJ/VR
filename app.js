@@ -980,7 +980,7 @@ const XR_STICK_DEADZONE = 0.18;
 
 // VR Player height adjustment (positive = lower viewpoint, makes you "shorter")
 // Adjust this value if you feel too tall or too short in the apartment
-const VR_HEIGHT_OFFSET = 0.3;
+const VR_HEIGHT_OFFSET = 0.7;
 
 renderer.xr.addEventListener('sessionstart', () => {
   isInVR = true;

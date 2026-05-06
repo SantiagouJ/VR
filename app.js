@@ -1025,14 +1025,11 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
-// Locomoción VR (thumbstick): offset acumulado + rotación yaw
+// Locomoción VR (thumbstick Quest / Quest Pro): solo stick izquierdo; sin rotación artificial con stick derecho
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
-let xrYaw = 0;
 let xrLastFrameTime = 0;
-let xrSnapTurnReady = true;
 const XR_MOVE_SPEED = 2.0;
-const XR_SNAP_ANGLE = Math.PI / 6;
 const XR_STICK_DEADZONE = 0.18;
 
 // VR Player height adjustment (positive = lower viewpoint, makes you "shorter")
@@ -1046,9 +1043,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   xrOffset.x = 0; 
   xrOffset.y = VR_HEIGHT_OFFSET;  // Apply height offset to lower viewpoint
   xrOffset.z = 0;
-  xrYaw = 0;
   xrLastFrameTime = 0;
-  xrSnapTurnReady = true;
   
   // Resume audio context and play ambient music in VR
   if (audioContext.state === 'suspended') {
@@ -1213,8 +1208,8 @@ function renderVRTutorial() {
   const controls = [
     { icon: '🎯', title: 'Trigger (Gatillo)', desc: 'Seleccionar superficies y elementos del menú' },
     { icon: '✊', title: 'Grip (Agarre)', desc: 'Sostener y mover el panel de materiales' },
-    { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverse por el apartamento' },
-    { icon: '🔄', title: 'Stick Derecho', desc: 'Girar la vista (rotación)' },
+    { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverte por el apartamento (con colisión con paredes)' },
+    { icon: '🧍', title: 'Girar', desc: 'Gira con el cuerpo o la cabeza; el stick derecho no mueve la cámara' },
     { icon: '👆', title: 'Apuntar', desc: 'Apunta a superficies para ver el rayo láser' },
   ];
   
@@ -1316,72 +1311,68 @@ const _collisionRaycaster = new THREE.Raycaster();
 const _collisionDirection = new THREE.Vector3();
 
 function checkVRCollision(proposedOffset) {
-  if (!loadedModel || meshParts.length === 0) return proposedOffset;
-  
-  const xrCam = renderer.xr.getCamera();
-  const playerPos = new THREE.Vector3();
-  xrCam.getWorldPosition(playerPos);
-  
-  // Calculate proposed new position
-  const newX = playerPos.x - proposedOffset.x;
-  const newZ = playerPos.z - proposedOffset.z;
-  
-  // Cast rays in multiple directions to detect walls
-  const rayOrigin = new THREE.Vector3(newX, playerPos.y - 0.3, newZ);
-  
-  // Check collision in the movement direction
-  const moveDir = new THREE.Vector3(-proposedOffset.x, 0, -proposedOffset.z);
-  if (moveDir.lengthSq() < 0.0001) return proposedOffset;
-  moveDir.normalize();
-  
-  _collisionRaycaster.set(rayOrigin, moveDir);
-  _collisionRaycaster.far = VR_COLLISION_DISTANCE + 0.2;
-  
-  const hits = _collisionRaycaster.intersectObjects(meshParts, true);
-  
-  for (const hit of hits) {
-    // Check if this is likely a wall (vertical surface)
-    if (hit.face) {
-      const normal = hit.face.normal.clone();
-      normal.transformDirection(hit.object.matrixWorld);
-      
-      // If the surface is mostly vertical (wall-like)
-      if (Math.abs(normal.y) < 0.5) {
-        if (hit.distance < VR_COLLISION_DISTANCE) {
-          // Block movement in this direction
-          return { x: 0, y: proposedOffset.y, z: 0 };
-        }
-      }
-    }
+  const dx = proposedOffset.x;
+  const dz = proposedOffset.z;
+  const dy = proposedOffset.y;
+  if ((dx === 0 && dz === 0) || !loadedModel || meshParts.length === 0) {
+    return proposedOffset;
   }
-  
-  // Also check with additional rays for corners
-  for (let i = 0; i < VR_COLLISION_RAYS; i++) {
-    const angle = (i / VR_COLLISION_RAYS) * Math.PI * 2;
-    _collisionDirection.set(Math.cos(angle), 0, Math.sin(angle));
-    
-    _collisionRaycaster.set(rayOrigin, _collisionDirection);
-    _collisionRaycaster.far = VR_COLLISION_DISTANCE;
-    
-    const rayHits = _collisionRaycaster.intersectObjects(meshParts, true);
-    
-    for (const hit of rayHits) {
+
+  function isVRHorizontalMoveBlocked(moveX, moveZ) {
+    if (moveX === 0 && moveZ === 0) return false;
+
+    const xrCam = renderer.xr.getCamera();
+    const playerPos = new THREE.Vector3();
+    xrCam.getWorldPosition(playerPos);
+
+    const newX = playerPos.x - moveX;
+    const newZ = playerPos.z - moveZ;
+    const rayOrigin = new THREE.Vector3(newX, playerPos.y - 0.35, newZ);
+
+    const moveDir = new THREE.Vector3(-moveX, 0, -moveZ);
+    if (moveDir.lengthSq() < 0.0001) return false;
+    moveDir.normalize();
+
+    _collisionRaycaster.set(rayOrigin, moveDir);
+    _collisionRaycaster.far = VR_COLLISION_DISTANCE + 0.25;
+
+    const hits = _collisionRaycaster.intersectObjects(meshParts, true);
+    for (const hit of hits) {
       if (hit.face) {
         const normal = hit.face.normal.clone();
         normal.transformDirection(hit.object.matrixWorld);
-        
-        if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE * 0.8) {
-          // We're too close to a wall, prevent movement towards it
-          const dotProduct = moveDir.dot(_collisionDirection);
-          if (dotProduct > 0.3) {
-            return { x: 0, y: proposedOffset.y, z: 0 };
+        if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE) {
+          return true;
+        }
+      }
+    }
+
+    for (let i = 0; i < VR_COLLISION_RAYS; i++) {
+      const angle = (i / VR_COLLISION_RAYS) * Math.PI * 2;
+      _collisionDirection.set(Math.cos(angle), 0, Math.sin(angle));
+
+      _collisionRaycaster.set(rayOrigin, _collisionDirection);
+      _collisionRaycaster.far = VR_COLLISION_DISTANCE;
+
+      const rayHits = _collisionRaycaster.intersectObjects(meshParts, true);
+      for (const hit of rayHits) {
+        if (hit.face) {
+          const normal = hit.face.normal.clone();
+          normal.transformDirection(hit.object.matrixWorld);
+          if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE * 0.85) {
+            if (moveDir.dot(_collisionDirection) > 0.3) return true;
           }
         }
       }
     }
+    return false;
   }
-  
-  return proposedOffset;
+
+  // Deslizar a lo largo de muros: si el paso diagonal está bloqueado, permitir solo X o solo Z (Quest Pro / Quest)
+  if (!isVRHorizontalMoveBlocked(dx, dz)) return proposedOffset;
+  if (!isVRHorizontalMoveBlocked(dx, 0)) return { x: dx, y: dy, z: 0 };
+  if (!isVRHorizontalMoveBlocked(0, dz)) return { x: 0, y: dy, z: dz };
+  return { x: 0, y: dy, z: 0 };
 }
 
 function drawRoundRect(ctx, x, y, w, h, r) {
@@ -1739,12 +1730,13 @@ function updateVRPointer() {
 }
 
 // ────────────────────────────────────────────
-// WebXR: Locomoción con thumbsticks (stick izq = mover, stick der = girar)
+// WebXR: Locomoción Meta Quest / Quest Pro (stick izq = mover; stick derecho ignorado para cámara)
 // ────────────────────────────────────────────
 const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
+const _xrIdentityQuat = { x: 0, y: 0, z: 0, w: 1 };
 
 function updateXRLocomotion(now) {
   if (!isInVR || !xrBaseReferenceSpace) return;
@@ -1756,31 +1748,21 @@ function updateXRLocomotion(now) {
   xrLastFrameTime = now;
   if (dt === 0) return;
 
-  let moveX = 0, moveZ = 0, turnX = 0;
+  let moveX = 0, moveZ = 0;
 
   for (const source of session.inputSources) {
     if (!source.gamepad) continue;
     const axes = source.gamepad.axes;
     if (!axes || axes.length < 4) continue;
 
-    // Quest touch controllers: axes[2]=stick X, axes[3]=stick Y
+    // Quest / Quest Pro: thumbstick en axes[2], axes[3] por mando
     const sx = axes[2] || 0;
     const sy = axes[3] || 0;
 
     if (source.handedness === 'left') {
       if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
       if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
-    } else if (source.handedness === 'right') {
-      if (Math.abs(sx) > XR_STICK_DEADZONE) turnX += sx;
     }
-  }
-
-  // Snap turn (stick derecho izq/der)
-  if (xrSnapTurnReady && Math.abs(turnX) > 0.7) {
-    xrYaw -= Math.sign(turnX) * XR_SNAP_ANGLE;
-    xrSnapTurnReady = false;
-  } else if (Math.abs(turnX) < 0.3) {
-    xrSnapTurnReady = true;
   }
 
   // Movimiento relativo a la dirección de la cabeza
@@ -1808,11 +1790,10 @@ function updateXRLocomotion(now) {
     xrOffset.z -= dz;
   }
 
-  // Aplica offset acumulado al reference space
-  const quat = new THREE.Quaternion().setFromAxisAngle(_xrUp, xrYaw);
+  // Aplica offset acumulado al reference space (sin yaw artificial; giras con el cuerpo/cabeza)
   const offsetTransform = new XRRigidTransform(
     { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z, w: 1 },
-    { x: quat.x, y: quat.y, z: quat.z, w: quat.w }
+    _xrIdentityQuat
   );
   const newRefSpace = xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform);
   renderer.xr.setReferenceSpace(newRefSpace);

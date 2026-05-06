@@ -1305,10 +1305,15 @@ function handleVRTutorialHit(uv) {
 // ────────────────────────────────────────────
 // VR Wall Collision Detection
 // ────────────────────────────────────────────
-const VR_COLLISION_DISTANCE = 0.3;  // Distance from walls to stop
-const VR_COLLISION_RAYS = 8;        // Number of rays to cast around player
+// Distancia mínima (pies/cintura) a muros verticales: no “rozar” la geometría.
+const VR_WALL_CLEARANCE = 0.48;
+const VR_WALL_CLEARANCE_PUSH_MAX = 0.22;
+const VR_WALL_PROBE_COUNT = 16;
 const _collisionRaycaster = new THREE.Raycaster();
 const _collisionDirection = new THREE.Vector3();
+const _vrWallNormal = new THREE.Vector3();
+const _vrSlideDir = new THREE.Vector3();
+const _vrOrigin = new THREE.Vector3();
 
 function checkVRCollision(proposedOffset) {
   const dx = proposedOffset.x;
@@ -1318,61 +1323,137 @@ function checkVRCollision(proposedOffset) {
     return proposedOffset;
   }
 
-  function isVRHorizontalMoveBlocked(moveX, moveZ) {
-    if (moveX === 0 && moveZ === 0) return false;
+  const xrCam = renderer.xr.getCamera();
+  const playerPos = new THREE.Vector3();
+  xrCam.getWorldPosition(playerPos);
+  _vrOrigin.set(playerPos.x, playerPos.y - 0.35, playerPos.z);
 
-    const xrCam = renderer.xr.getCamera();
-    const playerPos = new THREE.Vector3();
-    xrCam.getWorldPosition(playerPos);
+  // Desplazamiento en mundo coherente con xrOffset -= (dx, dz)
+  const mwx = -dx;
+  const mwz = -dz;
+  const stepLen = Math.hypot(mwx, mwz);
+  if (stepLen < 1e-6) return proposedOffset;
 
-    const newX = playerPos.x - moveX;
-    const newZ = playerPos.z - moveZ;
-    const rayOrigin = new THREE.Vector3(newX, playerPos.y - 0.35, newZ);
-
-    const moveDir = new THREE.Vector3(-moveX, 0, -moveZ);
-    if (moveDir.lengthSq() < 0.0001) return false;
-    moveDir.normalize();
-
-    _collisionRaycaster.set(rayOrigin, moveDir);
-    _collisionRaycaster.far = VR_COLLISION_DISTANCE + 0.25;
-
+  function castVerticalWall(from, dir, far) {
+    _collisionRaycaster.set(from, dir);
+    _collisionRaycaster.far = far;
     const hits = _collisionRaycaster.intersectObjects(meshParts, true);
-    for (const hit of hits) {
-      if (hit.face) {
-        const normal = hit.face.normal.clone();
-        normal.transformDirection(hit.object.matrixWorld);
-        if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE) {
-          return true;
-        }
-      }
+    for (const h of hits) {
+      if (!h.face) continue;
+      const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+      if (Math.abs(n.y) < 0.55) return h;
     }
-
-    for (let i = 0; i < VR_COLLISION_RAYS; i++) {
-      const angle = (i / VR_COLLISION_RAYS) * Math.PI * 2;
-      _collisionDirection.set(Math.cos(angle), 0, Math.sin(angle));
-
-      _collisionRaycaster.set(rayOrigin, _collisionDirection);
-      _collisionRaycaster.far = VR_COLLISION_DISTANCE;
-
-      const rayHits = _collisionRaycaster.intersectObjects(meshParts, true);
-      for (const hit of rayHits) {
-        if (hit.face) {
-          const normal = hit.face.normal.clone();
-          normal.transformDirection(hit.object.matrixWorld);
-          if (Math.abs(normal.y) < 0.5 && hit.distance < VR_COLLISION_DISTANCE * 0.85) {
-            if (moveDir.dot(_collisionDirection) > 0.3) return true;
-          }
-        }
-      }
-    }
-    return false;
+    return null;
   }
 
-  // Deslizar a lo largo de muros: si el paso diagonal está bloqueado, permitir solo X o solo Z (Quest Pro / Quest)
-  if (!isVRHorizontalMoveBlocked(dx, dz)) return proposedOffset;
-  if (!isVRHorizontalMoveBlocked(dx, 0)) return { x: dx, y: dy, z: 0 };
-  if (!isVRHorizontalMoveBlocked(0, dz)) return { x: 0, y: dy, z: dz };
-  return { x: 0, y: dy, z: 0 };
+  function tryAxisOnly() {
+    let ox = 0;
+    let oz = 0;
+    const ax = Math.abs(dx);
+    const az = Math.abs(dz);
+    if (ax > 1e-6) {
+      _collisionDirection.set(-Math.sign(dx), 0, 0);
+      const hx = castVerticalWall(_vrOrigin, _collisionDirection, ax + VR_WALL_CLEARANCE + 0.3);
+      if (!hx || hx.distance >= ax + VR_WALL_CLEARANCE - 0.02) ox = dx;
+    }
+    if (az > 1e-6) {
+      _collisionDirection.set(0, 0, -Math.sign(dz));
+      const hz = castVerticalWall(_vrOrigin, _collisionDirection, az + VR_WALL_CLEARANCE + 0.3);
+      if (!hz || hz.distance >= az + VR_WALL_CLEARANCE - 0.02) oz = dz;
+    }
+    return { x: ox, y: dy, z: oz };
+  }
+
+  _collisionDirection.set(mwx / stepLen, 0, mwz / stepLen);
+
+  const hit = castVerticalWall(_vrOrigin, _collisionDirection, stepLen + VR_WALL_CLEARANCE + 0.25);
+  if (!hit) return proposedOffset;
+
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  _vrWallNormal.set(n.x, 0, n.z);
+  if (_vrWallNormal.lengthSq() < 1e-6) return proposedOffset;
+  _vrWallNormal.normalize();
+
+  const walkX = mwx / stepLen;
+  const walkZ = mwz / stepLen;
+  const into = walkX * _vrWallNormal.x + walkZ * _vrWallNormal.z;
+  if (into >= -0.02) return proposedOffset;
+
+  const maxAlong = Math.max(0, hit.distance - VR_WALL_CLEARANCE);
+  if (maxAlong >= stepLen - 1e-4) return proposedOffset;
+
+  if (maxAlong > 1e-3) {
+    const sm = maxAlong / stepLen;
+    return { x: dx * sm, y: dy, z: dz * sm };
+  }
+
+  _vrSlideDir.set(
+    walkX - _vrWallNormal.x * into,
+    0,
+    walkZ - _vrWallNormal.z * into
+  );
+  if (_vrSlideDir.lengthSq() < 1e-5) return tryAxisOnly();
+
+  _vrSlideDir.normalize();
+  const slideHit = castVerticalWall(_vrOrigin, _vrSlideDir, stepLen + VR_WALL_CLEARANCE + 0.25);
+  if (slideHit) {
+    const maxSlide = Math.max(0, slideHit.distance - VR_WALL_CLEARANCE);
+    if (maxSlide < 1e-3) return tryAxisOnly();
+    const useLen = Math.min(stepLen, maxSlide);
+    return { x: -_vrSlideDir.x * useLen, y: dy, z: -_vrSlideDir.z * useLen };
+  }
+
+  const outMwx = _vrSlideDir.x * stepLen;
+  const outMwz = _vrSlideDir.z * stepLen;
+  return { x: -outMwx, y: dy, z: -outMwz };
+}
+
+/**
+ * Mantiene holgura: si algún muro está más cerca que VR_WALL_CLEARANCE, empuja el offset
+ * (varias lecturas en horizontal; se puede llamar dos veces por frame en esquinas).
+ */
+function applyVRWallClearancePass() {
+  if (!isInVR || !xrBaseReferenceSpace || !loadedModel || meshParts.length === 0) return;
+
+  const xrCam = renderer.xr.getCamera();
+  const playerPos = new THREE.Vector3();
+  xrCam.getWorldPosition(playerPos);
+  _vrOrigin.set(playerPos.x, playerPos.y - 0.35, playerPos.z);
+
+  let pushWx = 0;
+  let pushWz = 0;
+
+  for (let i = 0; i < VR_WALL_PROBE_COUNT; i++) {
+    const ang = (i / VR_WALL_PROBE_COUNT) * Math.PI * 2;
+    _collisionDirection.set(Math.cos(ang), 0, Math.sin(ang));
+    _collisionRaycaster.set(_vrOrigin, _collisionDirection);
+    _collisionRaycaster.far = VR_WALL_CLEARANCE + 0.35;
+
+    const hits = _collisionRaycaster.intersectObjects(meshParts, true);
+    let wallHit = null;
+    for (const h of hits) {
+      if (!h.face) continue;
+      const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+      if (Math.abs(n.y) < 0.55) {
+        wallHit = h;
+        break;
+      }
+    }
+    if (!wallHit || wallHit.distance >= VR_WALL_CLEARANCE - 0.01) continue;
+
+    const pen = VR_WALL_CLEARANCE - wallHit.distance;
+    pushWx -= _collisionDirection.x * pen;
+    pushWz -= _collisionDirection.z * pen;
+  }
+
+  const plen = Math.hypot(pushWx, pushWz);
+  if (plen < 1e-6) return;
+  const scale = plen > VR_WALL_CLEARANCE_PUSH_MAX ? VR_WALL_CLEARANCE_PUSH_MAX / plen : 1;
+  pushWx *= scale;
+  pushWz *= scale;
+
+  xrOffset.x += pushWx;
+  xrOffset.z += pushWz;
 }
 
 function drawRoundRect(ctx, x, y, w, h, r) {
@@ -1746,51 +1827,51 @@ function updateXRLocomotion(now) {
 
   const dt = xrLastFrameTime ? Math.min(0.1, (now - xrLastFrameTime) / 1000) : 0;
   xrLastFrameTime = now;
-  if (dt === 0) return;
 
-  let moveX = 0, moveZ = 0;
+  if (dt > 0) {
+    let moveX = 0, moveZ = 0;
 
-  for (const source of session.inputSources) {
-    if (!source.gamepad) continue;
-    const axes = source.gamepad.axes;
-    if (!axes || axes.length < 4) continue;
+    for (const source of session.inputSources) {
+      if (!source.gamepad) continue;
+      const axes = source.gamepad.axes;
+      if (!axes || axes.length < 4) continue;
 
-    // Quest / Quest Pro: thumbstick en axes[2], axes[3] por mando
-    const sx = axes[2] || 0;
-    const sy = axes[3] || 0;
+      // Quest / Quest Pro: thumbstick en axes[2], axes[3] por mando
+      const sx = axes[2] || 0;
+      const sy = axes[3] || 0;
 
-    if (source.handedness === 'left') {
-      if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
-      if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
+      if (source.handedness === 'left') {
+        if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
+        if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
+      }
+    }
+
+    // Movimiento relativo a la dirección de la cabeza
+    if (moveX !== 0 || moveZ !== 0) {
+      const xrCam = renderer.xr.getCamera();
+      xrCam.getWorldQuaternion(_xrHeadQuat);
+      _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
+      _xrForward.y = 0;
+      if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
+      _xrForward.normalize();
+      _xrRight.crossVectors(_xrForward, _xrUp).normalize();
+
+      const speed = XR_MOVE_SPEED * dt;
+      let dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
+      let dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
+
+      const proposedMove = { x: dx, y: 0, z: dz };
+      const allowedMove = checkVRCollision(proposedMove);
+      dx = allowedMove.x;
+      dz = allowedMove.z;
+
+      xrOffset.x -= dx;
+      xrOffset.z -= dz;
     }
   }
 
-  // Movimiento relativo a la dirección de la cabeza
-  if (moveX !== 0 || moveZ !== 0) {
-    const xrCam = renderer.xr.getCamera();
-    xrCam.getWorldQuaternion(_xrHeadQuat);
-    _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
-    _xrForward.y = 0;
-    if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
-    _xrForward.normalize();
-    _xrRight.crossVectors(_xrForward, _xrUp).normalize();
+  applyVRWallClearancePass();
 
-    const speed = XR_MOVE_SPEED * dt;
-    let dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
-    let dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
-
-    // Apply wall collision detection
-    const proposedMove = { x: dx, y: 0, z: dz };
-    const allowedMove = checkVRCollision(proposedMove);
-    dx = allowedMove.x;
-    dz = allowedMove.z;
-
-    // El offset del reference space va en sentido contrario al movimiento del jugador
-    xrOffset.x -= dx;
-    xrOffset.z -= dz;
-  }
-
-  // Aplica offset acumulado al reference space (sin yaw artificial; giras con el cuerpo/cabeza)
   const offsetTransform = new XRRigidTransform(
     { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z, w: 1 },
     _xrIdentityQuat

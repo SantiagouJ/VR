@@ -1305,13 +1305,15 @@ function handleVRTutorialHit(uv) {
 // ────────────────────────────────────────────
 // VR Wall Collision Detection
 // ────────────────────────────────────────────
-// Radio aproximado XZ para parar antes de atravesar mallas (sin rayos radiales: evitan quedar “pegados”).
+// Grosor XZ del jugador + tres rayos paralelos al movimiento (capsula estrecha) para muros y esquinas.
 const VR_PLAYER_SKIN = 0.22;
 const _collisionRaycaster = new THREE.Raycaster();
 const _collisionDirection = new THREE.Vector3();
 const _vrWallNormal = new THREE.Vector3();
 const _vrSlideDir = new THREE.Vector3();
 const _vrOrigin = new THREE.Vector3();
+const _vrRayFrom = new THREE.Vector3();
+const _vrPerp = new THREE.Vector3();
 
 function checkVRCollision(proposedOffset) {
   const dx = proposedOffset.x;
@@ -1326,10 +1328,9 @@ function checkVRCollision(proposedOffset) {
   xrCam.getWorldPosition(playerPos);
   _vrOrigin.set(playerPos.x, playerPos.y - 0.35, playerPos.z);
 
-  // Desplazamiento en mundo coherente con xrOffset -= (dx, dz)
-  const mwx = -dx;
-  const mwz = -dz;
-  const stepLen = Math.hypot(mwx, mwz);
+  // Rays must point where the player is moving (world-space dx, dz). xrOffset -= (dx,dz)
+  // previously used (-dx,-dz), which cast backward and never blocked walls ahead.
+  const stepLen = Math.hypot(dx, dz);
   if (stepLen < 1e-6) return proposedOffset;
 
   function castVerticalWall(from, dir, far) {
@@ -1344,40 +1345,61 @@ function checkVRCollision(proposedOffset) {
     return null;
   }
 
+  // Three parallel rays perpendicular to travel (narrow capsule) — fewer gaps at corners / posts.
+  function castVerticalWallCapsule(dirNorm, far) {
+    let bestHit = null;
+    _vrPerp.set(-dirNorm.z, 0, dirNorm.x);
+    if (_vrPerp.lengthSq() < 1e-10) {
+      _vrPerp.set(0, 0, 1);
+    } else {
+      _vrPerp.normalize();
+    }
+    const lateral = VR_PLAYER_SKIN * 0.88;
+    for (const off of [0, lateral, -lateral]) {
+      _vrRayFrom.set(
+        _vrOrigin.x + _vrPerp.x * off,
+        _vrOrigin.y,
+        _vrOrigin.z + _vrPerp.z * off
+      );
+      const h = castVerticalWall(_vrRayFrom, dirNorm, far);
+      if (h && (!bestHit || h.distance < bestHit.distance)) bestHit = h;
+    }
+    return bestHit;
+  }
+
   function tryAxisOnly() {
     let ox = 0;
     let oz = 0;
     const ax = Math.abs(dx);
     const az = Math.abs(dz);
     if (ax > 1e-6) {
-      _collisionDirection.set(-Math.sign(dx), 0, 0);
-      const hx = castVerticalWall(_vrOrigin, _collisionDirection, ax + VR_PLAYER_SKIN);
+      _collisionDirection.set(Math.sign(dx), 0, 0);
+      const hx = castVerticalWallCapsule(_collisionDirection, ax + VR_PLAYER_SKIN);
       if (!hx || hx.distance >= ax + VR_PLAYER_SKIN * 0.08) ox = dx;
     }
     if (az > 1e-6) {
-      _collisionDirection.set(0, 0, -Math.sign(dz));
-      const hz = castVerticalWall(_vrOrigin, _collisionDirection, az + VR_PLAYER_SKIN);
+      _collisionDirection.set(0, 0, Math.sign(dz));
+      const hz = castVerticalWallCapsule(_collisionDirection, az + VR_PLAYER_SKIN);
       if (!hz || hz.distance >= az + VR_PLAYER_SKIN * 0.08) oz = dz;
     }
     return { x: ox, y: dy, z: oz };
   }
 
-  _collisionDirection.set(mwx / stepLen, 0, mwz / stepLen);
+  _collisionDirection.set(dx / stepLen, 0, dz / stepLen);
 
-  const hit = castVerticalWall(_vrOrigin, _collisionDirection, stepLen + VR_PLAYER_SKIN);
-  if (!hit) return proposedOffset;
+  const hit = castVerticalWallCapsule(_collisionDirection, stepLen + VR_PLAYER_SKIN);
+  // Nothing within this stride along movement (far extends by skin only for grazing).
+  if (!hit || hit.distance > stepLen + 0.03) return proposedOffset;
 
   const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
   _vrWallNormal.set(n.x, 0, n.z);
   if (_vrWallNormal.lengthSq() < 1e-6) return proposedOffset;
   _vrWallNormal.normalize();
 
-  const walkX = mwx / stepLen;
-  const walkZ = mwz / stepLen;
+  const walkX = dx / stepLen;
+  const walkZ = dz / stepLen;
   const into = walkX * _vrWallNormal.x + walkZ * _vrWallNormal.z;
   if (into >= -0.02) return proposedOffset;
-
-  if (hit.distance > stepLen + VR_PLAYER_SKIN) return proposedOffset;
 
   _vrSlideDir.set(
     walkX - _vrWallNormal.x * into,
@@ -1387,14 +1409,12 @@ function checkVRCollision(proposedOffset) {
   if (_vrSlideDir.lengthSq() < 1e-5) return tryAxisOnly();
 
   _vrSlideDir.normalize();
-  const slideHit = castVerticalWall(_vrOrigin, _vrSlideDir, stepLen + VR_PLAYER_SKIN);
+  const slideHit = castVerticalWallCapsule(_vrSlideDir, stepLen + VR_PLAYER_SKIN);
   if (slideHit && slideHit.distance < VR_PLAYER_SKIN * 0.55) {
     return tryAxisOnly();
   }
 
-  const outMwx = _vrSlideDir.x * stepLen;
-  const outMwz = _vrSlideDir.z * stepLen;
-  return { x: -outMwx, y: dy, z: -outMwz };
+  return { x: _vrSlideDir.x * stepLen, y: dy, z: _vrSlideDir.z * stepLen };
 }
 
 function drawRoundRect(ctx, x, y, w, h, r) {

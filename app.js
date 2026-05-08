@@ -947,6 +947,8 @@ const uploadedTexEl = document.getElementById('uploaded-textures');
 const solidPicker   = document.getElementById('solid-color-picker');
 const colorHexLabel = document.getElementById('color-hex-label');
 const btnApplyColor = document.getElementById('btn-apply-color');
+const sketchfabLockNotice = document.getElementById('sketchfab-lock-notice');
+const panelSubtitleEl = document.querySelector('#controls .panel-header .subtitle');
 
 
 // ────────────────────────────────────────────
@@ -1663,7 +1665,7 @@ function onXRSelectStart(event) {
     if (hits.length > 0) {
       const hitMesh = hits[0].object;
       const index = meshParts.indexOf(hitMesh);
-      if (index !== -1) {
+      if (index !== -1 && !isMeshFinishesLocked(hitMesh)) {
         selectMeshAndShowFinishes(hitMesh, index);
         if (!vrPanelVisible) openVRPanel();
         else renderVRPanel();
@@ -1867,6 +1869,92 @@ const highlightEdges = new THREE.LineBasicMaterial({ color: 0x64B5F6, linewidth:
 let activeCategory = CATALOG[0].cat;
 const uploadedTextures = [];
 
+/** Full GLB from Sketchfab (metadata): disable entire finish UI */
+let modelFinishesLocked = false;
+
+function detectSketchfabGltf(gltf, filename) {
+  const asset = gltf?.asset || gltf?.parser?.json?.asset || {};
+  const gen = typeof asset.generator === 'string' ? asset.generator : '';
+  const copyright = typeof asset.copyright === 'string' ? asset.copyright : '';
+  if (/sketchfab/i.test(gen) || /sketchfab/i.test(copyright)) return true;
+  if (filename && /sketchfab/i.test(String(filename))) return true;
+  return false;
+}
+
+/** Blender / glTF often keeps Sketchfab imports under empties named Sketchfab_model… */
+function hasSketchfabAncestor(obj) {
+  let o = obj;
+  while (o) {
+    if (/sketchfab/i.test(o.name || '')) return true;
+    o = o.parent;
+  }
+  return false;
+}
+
+function isMeshFinishesLocked(mesh) {
+  if (!mesh) return false;
+  if (modelFinishesLocked) return true;
+  return hasSketchfabAncestor(mesh);
+}
+
+function filterEditableMeshIndices(indices) {
+  return indices.filter(i => meshParts[i] && !isMeshFinishesLocked(meshParts[i]));
+}
+
+function sceneHasSketchfabHierarchyMeshes() {
+  return meshParts.some(m => hasSketchfabAncestor(m));
+}
+
+function updateFinishesLockedUI() {
+  const fullFileLocked = modelFinishesLocked;
+  const partialSketchfab = !fullFileLocked && sceneHasSketchfabHierarchyMeshes();
+  const noEditableMeshes =
+    meshParts.length > 0 && meshParts.every((m) => isMeshFinishesLocked(m));
+  const blockFinishTools = fullFileLocked || noEditableMeshes;
+
+  if (controlsEl) {
+    controlsEl.classList.toggle('finishes-locked', blockFinishTools);
+    controlsEl.classList.toggle('has-sketchfab-parts', partialSketchfab);
+  }
+
+  if (sketchfabLockNotice) {
+    sketchfabLockNotice.hidden = !(fullFileLocked || partialSketchfab || noEditableMeshes);
+    sketchfabLockNotice.textContent = fullFileLocked
+      ? 'Los GLB exportados desde Sketchfab se muestran sin editar acabados.'
+      : noEditableMeshes
+        ? 'Todas las superficies son Sketchfab: no se pueden aplicar acabados.'
+        : 'Las piezas bajo objetos Sketchfab (p. ej. Sketchfab_model) no admiten acabados; el resto sí.';
+  }
+
+  if (panelSubtitleEl) {
+    if (fullFileLocked || noEditableMeshes) {
+      panelSubtitleEl.textContent =
+        'Modelo Sketchfab: solo lectura (sin cambiar acabados).';
+    } else if (partialSketchfab) {
+      panelSubtitleEl.textContent =
+        'Selecciona una superficie editable (no Sketchfab) para cambiar su acabado.';
+    } else {
+      panelSubtitleEl.textContent =
+        'Selecciona una superficie para cambiar su acabado';
+    }
+  }
+
+  const resetBtn = document.getElementById('btn-reset-colors');
+  const randBtn = document.getElementById('btn-randomize');
+  if (resetBtn) resetBtn.disabled = blockFinishTools;
+  if (randBtn) randBtn.disabled = blockFinishTools;
+  if (solidPicker) solidPicker.disabled = blockFinishTools;
+  if (textureInput) textureInput.disabled = blockFinishTools;
+  if (btnApplyColor) btnApplyColor.disabled = blockFinishTools;
+  if (partsSearch) partsSearch.disabled = blockFinishTools;
+  if (uploadArea) uploadArea.classList.toggle('disabled', blockFinishTools);
+
+  document.querySelectorAll('.finish-tab').forEach((tab) => {
+    tab.disabled = blockFinishTools;
+    tab.setAttribute('aria-disabled', blockFinishTools ? 'true' : 'false');
+  });
+}
+
 // ────────────────────────────────────────────
 // Grouping logic
 // ────────────────────────────────────────────
@@ -1910,9 +1998,11 @@ function computeGroups() {
 }
 
 function getSelectedMeshIndices() {
-  if (selectedGroup) return [...selectedGroup.meshIndices];
-  if (selectedIndex >= 0) return [selectedIndex];
-  return [];
+  let raw = [];
+  if (selectedGroup) raw = [...selectedGroup.meshIndices];
+  else if (selectedIndex >= 0) raw = [selectedIndex];
+  else return [];
+  return filterEditableMeshIndices(raw);
 }
 
 // ────────────────────────────────────────────
@@ -1997,7 +2087,10 @@ function processModel(gltf, filename) {
   selectedGroup = null;
   meshGroups = [];
 
+  modelFinishesLocked = detectSketchfabGltf(gltf, filename);
+
   const model = gltf.scene;
+  model.userData.finishesLocked = modelFinishesLocked;
 
   model.traverse((child) => {
     if (child.isMesh) {
@@ -2055,6 +2148,8 @@ function processModel(gltf, filename) {
   }
 
   setTimeout(() => { hintEl.style.opacity = '0'; }, 6000);
+
+  updateFinishesLockedUI();
 }
 
 // ────────────────────────────────────────────
@@ -2109,6 +2204,10 @@ function buildControlsUI(filename) {
       });
 
       wrapper.appendChild(header);
+
+      const editableInGroup = filterEditableMeshIndices(group.meshIndices);
+      const paintBtnEl = header.querySelector('.group-paint-btn');
+      if (paintBtnEl) paintBtnEl.disabled = editableInGroup.length === 0;
     }
 
     const itemsContainer = document.createElement('div');
@@ -2118,12 +2217,15 @@ function buildControlsUI(filename) {
       const mesh = meshParts[mi];
       const name = mesh.name || `Parte_${mi + 1}`;
       const color = mesh.material?.color ? '#' + mesh.material.color.getHexString() : '#cccccc';
+      const sfLocked = isMeshFinishesLocked(mesh);
 
       const item = document.createElement('div');
       item.className = 'color-group';
+      if (sfLocked) item.classList.add('mesh-finishes-locked');
       item.dataset.meshIndex = mi;
       item.dataset.name = formatName(name).toLowerCase();
       item.setAttribute('role', 'listitem');
+      if (sfLocked) item.title = `${name} — Sketchfab (solo lectura)`;
 
       item.innerHTML = `
         <label>
@@ -2134,6 +2236,7 @@ function buildControlsUI(filename) {
       `;
 
       item.addEventListener('click', () => {
+        if (isMeshFinishesLocked(mesh)) return;
         selectMeshAndShowFinishes(mesh, mi);
       });
 
@@ -2229,6 +2332,7 @@ function findGroupForMesh(meshIndex) {
 }
 
 function selectMeshAndShowFinishes(mesh, index) {
+  if (isMeshFinishesLocked(mesh)) return;
   const parentGroup = findGroupForMesh(index);
   if (parentGroup) {
     selectGroupAndShowFinishes(parentGroup);
@@ -2275,6 +2379,10 @@ function selectMeshAndShowFinishes(mesh, index) {
 // Selection: entire group
 // ────────────────────────────────────────────
 function selectGroupAndShowFinishes(group) {
+  if (modelFinishesLocked) return;
+  const editableIdx = filterEditableMeshIndices(group.meshIndices);
+  if (editableIdx.length === 0) return;
+
   partsList.querySelectorAll('.color-group.selected').forEach(el => el.classList.remove('selected'));
   partsList.querySelectorAll('.group-header.selected').forEach(el => el.classList.remove('selected'));
   clearHighlight();
@@ -2288,14 +2396,14 @@ function selectGroupAndShowFinishes(group) {
   }
 
   selectedGroup = group;
-  selectedMesh = meshParts[group.meshIndices[0]];
-  selectedIndex = group.meshIndices[0];
+  selectedMesh = meshParts[editableIdx[0]];
+  selectedIndex = editableIdx[0];
 
   const gi = meshGroups.indexOf(group);
   const headerEl = partsList.querySelector(`.part-group[data-group-index="${gi}"] .group-header`);
   if (headerEl) headerEl.classList.add('selected');
 
-  highlightMeshes(group.meshIndices);
+  highlightMeshes(editableIdx);
 
   document.getElementById('selected-part-label').textContent =
     `${group.name} (${group.meshIndices.length} superficies)`;
@@ -2325,7 +2433,7 @@ function highlightMeshes(indices) {
   clearHighlight();
   indices.forEach(i => {
     const mesh = meshParts[i];
-    if (!mesh) return;
+    if (!mesh || isMeshFinishesLocked(mesh)) return;
     const edges = new THREE.EdgesGeometry(mesh.geometry, 30);
     const line = new THREE.LineSegments(edges, highlightEdges);
     line.userData.isHighlight = true;
@@ -2683,6 +2791,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const hitMesh = intersects[0].object;
     const index = meshParts.indexOf(hitMesh);
     if (index !== -1) {
+      if (isMeshFinishesLocked(hitMesh)) return;
       selectMeshAndShowFinishes(hitMesh, index);
     }
   } else {
@@ -2719,6 +2828,7 @@ panelClose.addEventListener('click', () => {
 // ────────────────────────────────────────────
 document.getElementById('btn-reset-colors').addEventListener('click', () => {
   meshParts.forEach((mesh, i) => {
+    if (isMeshFinishesLocked(mesh)) return;
     const orig = originalMaterials.get(mesh.uuid);
     if (orig) {
       mesh.material.color.copy(orig.color);
@@ -2743,6 +2853,7 @@ document.getElementById('btn-randomize').addEventListener('click', () => {
   const metalTypes = { metal: 0.85, rust: 0.3, glass: 0.1 };
 
   meshParts.forEach((mesh, i) => {
+    if (isMeshFinishesLocked(mesh)) return;
     const tile = allTiles[Math.floor(Math.random() * allTiles.length)];
     const { tex, norm } = buildMeshTextureSet(tile, mesh);
     mesh.material.map = tex;
@@ -2795,6 +2906,9 @@ document.getElementById('btn-load-new').addEventListener('click', () => {
   if (audioToggle) {
     audioToggle.classList.remove('active');
   }
+
+  modelFinishesLocked = false;
+  updateFinishesLockedUI();
 });
 
 // ────────────────────────────────────────────
@@ -2836,7 +2950,7 @@ renderer.setAnimationLoop(animate);
 // ────────────────────────────────────────────
 // Load default model
 // ────────────────────────────────────────────
-const DEFAULT_MODEL = 'escAparates.glb';
+const DEFAULT_MODEL = 'apto.glb';
 
 function loadDefaultModel() {
   showLoading(true);
@@ -2877,3 +2991,5 @@ if (audioToggleBtn) {
     }
   });
 }
+
+updateFinishesLockedUI();

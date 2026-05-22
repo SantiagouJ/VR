@@ -1027,7 +1027,7 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
-// Locomoción VR (thumbstick Quest / Quest Pro): solo stick izquierdo; sin rotación artificial con stick derecho
+// Locomoción VR (Meta Quest 3): movimiento con stick derecho; panel de acabados en mano izquierda
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
 let xrLastFrameTime = 0;
@@ -1196,7 +1196,7 @@ function renderVRTutorial() {
   ctx.font = 'bold 32px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Controles VR - Meta Quest Pro', W / 2, 45);
+  ctx.fillText('Controles VR - Meta Quest 3', W / 2, 45);
   
   // Divider
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
@@ -1210,8 +1210,9 @@ function renderVRTutorial() {
   const controls = [
     { icon: '🎯', title: 'Trigger (Gatillo)', desc: 'Seleccionar superficies y elementos del menú' },
     { icon: '✊', title: 'Grip (Agarre)', desc: 'Sostener y mover el panel de materiales' },
-    { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverte por el apartamento (con colisión con paredes)' },
-    { icon: '🧍', title: 'Girar', desc: 'Gira con el cuerpo o la cabeza; el stick derecho no mueve la cámara' },
+    { icon: '🕹️', title: 'Stick Derecho', desc: 'Moverte por el apartamento (con colisión con paredes)' },
+    { icon: '📋', title: 'Panel de acabados', desc: 'Aparece en la mano izquierda al seleccionar una superficie' },
+    { icon: '🧍', title: 'Girar', desc: 'Gira con el cuerpo o la cabeza para cambiar de dirección' },
     { icon: '👆', title: 'Apuntar', desc: 'Apunta a superficies para ver el rayo láser' },
   ];
   
@@ -1571,19 +1572,50 @@ function renderVRPanel() {
   vrPanelTexture.needsUpdate = true;
 }
 
+const VR_LEFT_PANEL_LOCAL_POS = new THREE.Vector3(0, 0.07, -0.13);
+const VR_LEFT_PANEL_LOCAL_EULER = new THREE.Euler(-0.4, 0, 0);
+
+function getXRControllerEntry(handedness) {
+  return xrControllers.find(({ ctrl }) => ctrl.userData.handedness === handedness) || null;
+}
+
+function attachVRPanelToLeftHand() {
+  const entry = getXRControllerEntry('left');
+  if (!entry) return false;
+
+  const parent = entry.grip;
+  if (vrPanelMesh.parent !== parent) {
+    parent.add(vrPanelMesh);
+  }
+  vrPanelMesh.position.copy(VR_LEFT_PANEL_LOCAL_POS);
+  vrPanelMesh.rotation.copy(VR_LEFT_PANEL_LOCAL_EULER);
+  return true;
+}
+
+function detachVRPanelFromController() {
+  if (vrPanelMesh.parent && vrPanelMesh.parent !== scene) {
+    scene.attach(vrPanelMesh);
+  }
+}
+
 function openVRPanel() {
-  const xrCam = renderer.xr.getCamera();
-  const pos = new THREE.Vector3();
-  const dir = new THREE.Vector3();
-  xrCam.getWorldPosition(pos);
-  xrCam.getWorldDirection(dir);
+  vrPanelMesh.userData.userMoved = false;
 
-  dir.y = 0;
-  dir.normalize();
+  if (!attachVRPanelToLeftHand()) {
+    const xrCam = renderer.xr.getCamera();
+    const pos = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    xrCam.getWorldPosition(pos);
+    xrCam.getWorldDirection(dir);
 
-  vrPanelMesh.position.copy(pos).addScaledVector(dir, 1.3);
-  vrPanelMesh.position.y = pos.y - 0.05;
-  vrPanelMesh.lookAt(pos.x, vrPanelMesh.position.y, pos.z);
+    dir.y = 0;
+    dir.normalize();
+
+    detachVRPanelFromController();
+    vrPanelMesh.position.copy(pos).addScaledVector(dir, 1.3);
+    vrPanelMesh.position.y = pos.y - 0.05;
+    vrPanelMesh.lookAt(pos.x, vrPanelMesh.position.y, pos.z);
+  }
 
   vrPanelMesh.visible = true;
   vrPanelVisible = true;
@@ -1591,6 +1623,7 @@ function openVRPanel() {
 }
 
 function closeVRPanel() {
+  detachVRPanelFromController();
   vrPanelMesh.visible = false;
   vrPanelVisible = false;
   vrPointerDot.visible = false;
@@ -1685,6 +1718,10 @@ const vrDragState = {
 };
 
 function startDraggingMesh(mesh, controller) {
+  if (mesh.parent && mesh.parent !== scene) {
+    scene.attach(mesh);
+  }
+
   vrDragState.active = true;
   vrDragState.mesh = mesh;
   vrDragState.controller = controller;
@@ -1774,7 +1811,7 @@ function updateVRPointer() {
 }
 
 // ────────────────────────────────────────────
-// WebXR: Locomoción Meta Quest / Quest Pro (stick izq = mover; stick derecho ignorado para cámara)
+// WebXR: Locomoción Meta Quest 3 (stick derecho = mover)
 // ────────────────────────────────────────────
 const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
@@ -1803,7 +1840,7 @@ function updateXRLocomotion(now) {
     const sx = axes[2] || 0;
     const sy = axes[3] || 0;
 
-    if (source.handedness === 'left') {
+    if (source.handedness === 'right') {
       if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
       if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
     }
@@ -2937,6 +2974,9 @@ function animate(time) {
 
   if (isInVR) {
     updateXRLocomotion(time || performance.now());
+    if (vrPanelVisible && !vrDragState.active && !vrPanelMesh.userData.userMoved) {
+      attachVRPanelToLeftHand();
+    }
     updateVRPointer();
     updateVRDrag();
   } else {

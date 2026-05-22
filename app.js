@@ -1027,13 +1027,16 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
-// Locomoción VR (Meta Quest 3): stick izq. mover · stick der. girar cámara · panel en mano izquierda
+// Locomoción VR (Meta Quest 3): stick izq. mover · stick der. mirar (yaw/pitch) · panel en mano izquierda
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
 let xrYaw = 0;
+let xrPitch = 0;
 let xrLastFrameTime = 0;
 const XR_MOVE_SPEED = 2.0;
 const XR_TURN_SPEED = 2.2;
+const XR_PITCH_SPEED = 1.8;
+const XR_PITCH_MAX = Math.PI / 2 - 0.12;
 const XR_STICK_DEADZONE = 0.18;
 
 // VR Player height adjustment (positive = lower viewpoint, makes you "shorter")
@@ -1048,6 +1051,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   xrOffset.y = VR_HEIGHT_OFFSET;  // Apply height offset to lower viewpoint
   xrOffset.z = 0;
   xrYaw = 0;
+  xrPitch = 0;
   xrLastFrameTime = 0;
   
   // Resume audio context and play ambient music in VR
@@ -1214,7 +1218,7 @@ function renderVRTutorial() {
     { icon: '🎯', title: 'Trigger (Gatillo)', desc: 'Seleccionar superficies y elementos del menú' },
     { icon: '✊', title: 'Grip (Agarre)', desc: 'Sostener y mover el panel de materiales' },
     { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverte por el apartamento (con colisión con paredes)' },
-    { icon: '🔄', title: 'Stick Derecho', desc: 'Girar la cámara (rotación suave)' },
+    { icon: '🔄', title: 'Stick Derecho', desc: 'Mirar en horizontal y vertical (estilo shooter)' },
     { icon: '📋', title: 'Panel de acabados', desc: 'Aparece en la mano izquierda al seleccionar una superficie' },
     { icon: '👆', title: 'Apuntar', desc: 'Apunta a superficies para ver el rayo láser' },
   ];
@@ -1814,12 +1818,45 @@ function updateVRPointer() {
 }
 
 // ────────────────────────────────────────────
-// WebXR: Locomoción Meta Quest 3 (stick izq. = mover · stick der. = girar cámara)
+// WebXR: Locomoción Meta Quest 3 (stick izq. = mover · stick der. = mirar yaw/pitch)
 const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
-const _xrTurnQuat = new THREE.Quaternion();
+const _xrLookQuat = new THREE.Quaternion();
+const _xrLookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _xrHeadLocal = new THREE.Vector3();
+const _xrHeadWorld = new THREE.Vector3();
+const _xrHeadRotated = new THREE.Vector3();
+const XR_HEAD_PIVOT_Y = 0.85;
+
+function getXRHeadWorldPosition(out) {
+  _xrLookEuler.set(xrPitch, xrYaw, 0);
+  _xrLookQuat.setFromEuler(_xrLookEuler);
+  _xrHeadLocal.set(0, XR_HEAD_PIVOT_Y, 0);
+  out.copy(_xrHeadLocal).applyQuaternion(_xrLookQuat);
+  out.x += xrOffset.x;
+  out.y += xrOffset.y;
+  out.z += xrOffset.z;
+  return out;
+}
+
+function applyXRLookDelta(deltaYaw, deltaPitch) {
+  getXRHeadWorldPosition(_xrHeadWorld);
+
+  xrYaw += deltaYaw;
+  xrPitch += deltaPitch;
+  xrPitch = Math.max(-XR_PITCH_MAX, Math.min(XR_PITCH_MAX, xrPitch));
+
+  _xrLookEuler.set(xrPitch, xrYaw, 0);
+  _xrLookQuat.setFromEuler(_xrLookEuler);
+  _xrHeadLocal.set(0, XR_HEAD_PIVOT_Y, 0);
+  _xrHeadRotated.copy(_xrHeadLocal).applyQuaternion(_xrLookQuat);
+
+  xrOffset.x = _xrHeadWorld.x - _xrHeadRotated.x;
+  xrOffset.y = _xrHeadWorld.y - _xrHeadRotated.y;
+  xrOffset.z = _xrHeadWorld.z - _xrHeadRotated.z;
+}
 
 function updateXRLocomotion(now) {
   if (!isInVR || !xrBaseReferenceSpace) return;
@@ -1832,7 +1869,7 @@ function updateXRLocomotion(now) {
   if (dt === 0) return;
 
   let moveX = 0, moveZ = 0;
-  let turnX = 0;
+  let lookX = 0, lookY = 0;
 
   for (const source of session.inputSources) {
     if (!source.gamepad) continue;
@@ -1846,12 +1883,16 @@ function updateXRLocomotion(now) {
       if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
       if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
     } else if (source.handedness === 'right') {
-      if (Math.abs(sx) > XR_STICK_DEADZONE) turnX += sx;
+      if (Math.abs(sx) > XR_STICK_DEADZONE) lookX += sx;
+      if (Math.abs(sy) > XR_STICK_DEADZONE) lookY += sy;
     }
   }
 
-  if (turnX !== 0) {
-    xrYaw -= turnX * XR_TURN_SPEED * dt;
+  if (lookX !== 0 || lookY !== 0) {
+    applyXRLookDelta(
+      lookX * XR_TURN_SPEED * dt,
+      -lookY * XR_PITCH_SPEED * dt
+    );
   }
 
   // Movimiento relativo a la dirección de la cabeza
@@ -1879,10 +1920,11 @@ function updateXRLocomotion(now) {
     xrOffset.z -= -dx * sin + dz * cos;
   }
 
-  _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
+  _xrLookEuler.set(xrPitch, xrYaw, 0);
+  _xrLookQuat.setFromEuler(_xrLookEuler);
   const offsetTransform = new XRRigidTransform(
     { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z },
-    { x: _xrTurnQuat.x, y: _xrTurnQuat.y, z: _xrTurnQuat.z, w: _xrTurnQuat.w }
+    { x: _xrLookQuat.x, y: _xrLookQuat.y, z: _xrLookQuat.z, w: _xrLookQuat.w }
   );
   const newRefSpace = xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform);
   renderer.xr.setReferenceSpace(newRefSpace);

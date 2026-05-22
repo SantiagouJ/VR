@@ -1027,8 +1027,8 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
-// Locomoción VR (Meta Quest 3): stick izq. mover · stick der. girar cámara · panel en mano izquierda
-// xrOffset = traslación en espacio base (local-floor); xrYaw = rotación artificial acumulada (Y).
+// Locomoción VR (Meta Quest 3)
+// Estado del offset acumulado sobre local-floor: traslación base + yaw artificial.
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
 let xrYaw = 0;
@@ -1816,61 +1816,18 @@ function updateVRPointer() {
 
 // ────────────────────────────────────────────
 // WebXR: Locomoción Meta Quest 3 (stick izq. = mover · stick der. = girar cámara)
+// ────────────────────────────────────────────
 const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
 const _xrTurnQuat = new THREE.Quaternion();
-const _xrInvTurnQuat = new THREE.Quaternion();
-const _xrHeadPos = new THREE.Vector3();
-const _xrHeadLocal = new THREE.Vector3();
-const _xrCompWorld = new THREE.Vector3();
+const _xrPivot = new THREE.Vector3();
+const _xrRelPos = new THREE.Vector3();
 
-function applyXRTurn(deltaYaw) {
-  if (deltaYaw === 0) return;
-
-  const xrCam = renderer.xr.getCamera();
-  xrCam.getWorldPosition(_xrHeadPos);
-
-  // Posición de la cabeza relativa al origen del offset, en espacio base.
-  _xrHeadLocal.set(_xrHeadPos.x - xrOffset.x, 0, _xrHeadPos.z - xrOffset.z);
-
-  // Cabeza en espacio local del offset (sin yaw artificial).
-  _xrInvTurnQuat.setFromAxisAngle(_xrUp, -xrYaw);
-  _xrHeadLocal.applyQuaternion(_xrInvTurnQuat);
-
-  // Compensar traslación para que la cabeza no se desplace al girar: P' = P - R(yaw) * (R(d)-I) * h
-  _xrTurnQuat.setFromAxisAngle(_xrUp, deltaYaw);
-  _xrCompWorld.copy(_xrHeadLocal).applyQuaternion(_xrTurnQuat).sub(_xrHeadLocal);
-
-  _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
-  _xrCompWorld.applyQuaternion(_xrTurnQuat);
-
-  xrOffset.x -= _xrCompWorld.x;
-  xrOffset.z -= _xrCompWorld.z;
-  xrYaw += deltaYaw;
-}
-
-function applyXRMove(dx, dz) {
-  if (dx === 0 && dz === 0) return;
-
-  const allowedMove = checkVRCollision({ x: dx, y: 0, z: dz });
-  // Movimiento en espacio base (misma referencia que xrOffset en XRRigidTransform).
-  xrOffset.x -= allowedMove.x;
-  xrOffset.z -= allowedMove.z;
-}
-
-function updateXRLocomotion(now) {
-  if (!isInVR || !xrBaseReferenceSpace) return;
-
-  const session = renderer.xr.getSession();
-  if (!session) return;
-
-  const dt = xrLastFrameTime ? Math.min(0.1, (now - xrLastFrameTime) / 1000) : 0;
-  xrLastFrameTime = now;
-  if (dt === 0) return;
-
-  let moveX = 0, moveZ = 0;
+function readXRStickInput(session) {
+  let moveX = 0;
+  let moveZ = 0;
   let turnX = 0;
 
   for (const source of session.inputSources) {
@@ -1889,32 +1846,99 @@ function updateXRLocomotion(now) {
     }
   }
 
-  // Giro antes que traslación: la compensación usa la posición de cabeza del frame anterior.
-  if (turnX !== 0) {
-    applyXRTurn(turnX * XR_TURN_SPEED * dt);
-  }
+  return { moveX, moveZ, turnX };
+}
 
-  if (moveX !== 0 || moveZ !== 0) {
-    const xrCam = renderer.xr.getCamera();
-    xrCam.getWorldQuaternion(_xrHeadQuat);
-    _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
-    _xrForward.y = 0;
-    if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
-    _xrForward.normalize();
-    _xrRight.crossVectors(_xrForward, _xrUp).normalize();
+function getXRHeadWorldXZ(headLocal, yaw, out) {
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+  out.x = xrOffset.x + headLocal.x * cosY - headLocal.z * sinY;
+  out.z = xrOffset.z + headLocal.x * sinY + headLocal.z * cosY;
+  return out;
+}
 
-    const speed = XR_MOVE_SPEED * dt;
-    const dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
-    const dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
-    applyXRMove(dx, dz);
-  }
+function applyXRTurn(deltaYaw, headLocal, yawBeforeTurn) {
+  if (deltaYaw === 0) return;
 
+  getXRHeadWorldXZ(headLocal, yawBeforeTurn, _xrPivot);
+
+  _xrRelPos.set(xrOffset.x - _xrPivot.x, 0, xrOffset.z - _xrPivot.z);
+  const cos = Math.cos(deltaYaw);
+  const sin = Math.sin(deltaYaw);
+  xrOffset.x = _xrPivot.x + _xrRelPos.x * cos - _xrRelPos.z * sin;
+  xrOffset.z = _xrPivot.z + _xrRelPos.x * sin + _xrRelPos.z * cos;
+  xrYaw = yawBeforeTurn + deltaYaw;
+}
+
+function getXRMoveDirection(moveX, moveZ, headOrientation, yaw, outForward, outRight) {
+  _xrHeadQuat.set(
+    headOrientation.x,
+    headOrientation.y,
+    headOrientation.z,
+    headOrientation.w
+  );
+
+  outForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
+  _xrTurnQuat.setFromAxisAngle(_xrUp, yaw);
+  outForward.applyQuaternion(_xrTurnQuat);
+  outForward.y = 0;
+  if (outForward.lengthSq() < 1e-6) outForward.set(0, 0, -1);
+  else outForward.normalize();
+
+  outRight.crossVectors(outForward, _xrUp).normalize();
+
+  return {
+    x: (outForward.x * -moveZ + outRight.x * moveX),
+    z: (outForward.z * -moveZ + outRight.z * moveX),
+  };
+}
+
+function applyXRMove(dx, dz) {
+  if (dx === 0 && dz === 0) return;
+
+  const allowedMove = checkVRCollision({ x: dx, y: 0, z: dz });
+  xrOffset.x -= allowedMove.x;
+  xrOffset.z -= allowedMove.z;
+}
+
+function commitXRReferenceSpace() {
   _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
   const offsetTransform = new XRRigidTransform(
     { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z },
     { x: _xrTurnQuat.x, y: _xrTurnQuat.y, z: _xrTurnQuat.z, w: _xrTurnQuat.w }
   );
   renderer.xr.setReferenceSpace(xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform));
+}
+
+function updateXRLocomotion(now, frame) {
+  if (!isInVR || !xrBaseReferenceSpace || !frame) return;
+
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  const viewerPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+  if (!viewerPose) return;
+
+  const dt = xrLastFrameTime ? Math.min(0.1, (now - xrLastFrameTime) / 1000) : 0;
+  xrLastFrameTime = now;
+  if (dt === 0) return;
+
+  const { moveX, moveZ, turnX } = readXRStickInput(session);
+  const headLocal = viewerPose.transform.position;
+  const headOrientation = viewerPose.transform.orientation;
+  const yawBeforeInput = xrYaw;
+
+  if (turnX !== 0) {
+    applyXRTurn(turnX * XR_TURN_SPEED * dt, headLocal, yawBeforeInput);
+  }
+
+  if (moveX !== 0 || moveZ !== 0) {
+    const dir = getXRMoveDirection(moveX, moveZ, headOrientation, yawBeforeInput, _xrForward, _xrRight);
+    const speed = XR_MOVE_SPEED * dt;
+    applyXRMove(dir.x * speed, dir.z * speed);
+  }
+
+  commitXRReferenceSpace();
 }
 
 // ────────────────────────────────────────────
@@ -2997,7 +3021,7 @@ window.addEventListener('resize', () => {
 // ────────────────────────────────────────────
 // Animation loop (setAnimationLoop for WebXR)
 // ────────────────────────────────────────────
-function animate(time) {
+function animate(time, frame) {
   scene.children
     .filter(c => c.userData.isHighlight)
     .forEach(c => {
@@ -3010,7 +3034,7 @@ function animate(time) {
     });
 
   if (isInVR) {
-    updateXRLocomotion(time || performance.now());
+    updateXRLocomotion(time || performance.now(), frame);
     if (vrPanelVisible && !vrDragState.active && !vrPanelMesh.userData.userMoved) {
       attachVRPanelToLeftHand();
     }

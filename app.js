@@ -1028,6 +1028,7 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 let isInVR = false;
 
 // Locomoción VR (Meta Quest 3): stick izq. mover · stick der. girar cámara · panel en mano izquierda
+// xrOffset = traslación en espacio base (local-floor); xrYaw = rotación artificial acumulada (Y).
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
 let xrYaw = 0;
@@ -1820,7 +1821,10 @@ const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
 const _xrTurnQuat = new THREE.Quaternion();
+const _xrInvTurnQuat = new THREE.Quaternion();
 const _xrHeadPos = new THREE.Vector3();
+const _xrHeadLocal = new THREE.Vector3();
+const _xrCompWorld = new THREE.Vector3();
 
 function applyXRTurn(deltaYaw) {
   if (deltaYaw === 0) return;
@@ -1828,24 +1832,32 @@ function applyXRTurn(deltaYaw) {
   const xrCam = renderer.xr.getCamera();
   xrCam.getWorldPosition(_xrHeadPos);
 
-  const wx = _xrHeadPos.x - xrOffset.x;
-  const wz = _xrHeadPos.z - xrOffset.z;
+  // Posición de la cabeza relativa al origen del offset, en espacio base.
+  _xrHeadLocal.set(_xrHeadPos.x - xrOffset.x, 0, _xrHeadPos.z - xrOffset.z);
 
-  const cosInv = Math.cos(-xrYaw);
-  const sinInv = Math.sin(-xrYaw);
-  const headLocalX = wx * cosInv - wz * sinInv;
-  const headLocalZ = wx * sinInv + wz * cosInv;
+  // Cabeza en espacio local del offset (sin yaw artificial).
+  _xrInvTurnQuat.setFromAxisAngle(_xrUp, -xrYaw);
+  _xrHeadLocal.applyQuaternion(_xrInvTurnQuat);
 
-  const cosD = Math.cos(deltaYaw);
-  const sinD = Math.sin(deltaYaw);
-  const dLocalX = headLocalX * (cosD - 1) - headLocalZ * sinD;
-  const dLocalZ = headLocalX * sinD + headLocalZ * (cosD - 1);
+  // Compensar traslación para que la cabeza no se desplace al girar: P' = P - R(yaw) * (R(d)-I) * h
+  _xrTurnQuat.setFromAxisAngle(_xrUp, deltaYaw);
+  _xrCompWorld.copy(_xrHeadLocal).applyQuaternion(_xrTurnQuat).sub(_xrHeadLocal);
 
-  const cosY = Math.cos(xrYaw);
-  const sinY = Math.sin(xrYaw);
-  xrOffset.x -= dLocalX * cosY - dLocalZ * sinY;
-  xrOffset.z -= dLocalX * sinY + dLocalZ * cosY;
+  _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
+  _xrCompWorld.applyQuaternion(_xrTurnQuat);
+
+  xrOffset.x -= _xrCompWorld.x;
+  xrOffset.z -= _xrCompWorld.z;
   xrYaw += deltaYaw;
+}
+
+function applyXRMove(dx, dz) {
+  if (dx === 0 && dz === 0) return;
+
+  const allowedMove = checkVRCollision({ x: dx, y: 0, z: dz });
+  // Movimiento en espacio base (misma referencia que xrOffset en XRRigidTransform).
+  xrOffset.x -= allowedMove.x;
+  xrOffset.z -= allowedMove.z;
 }
 
 function updateXRLocomotion(now) {
@@ -1877,11 +1889,11 @@ function updateXRLocomotion(now) {
     }
   }
 
+  // Giro antes que traslación: la compensación usa la posición de cabeza del frame anterior.
   if (turnX !== 0) {
     applyXRTurn(turnX * XR_TURN_SPEED * dt);
   }
 
-  // Movimiento relativo a la dirección de la cabeza
   if (moveX !== 0 || moveZ !== 0) {
     const xrCam = renderer.xr.getCamera();
     xrCam.getWorldQuaternion(_xrHeadQuat);
@@ -1892,18 +1904,9 @@ function updateXRLocomotion(now) {
     _xrRight.crossVectors(_xrForward, _xrUp).normalize();
 
     const speed = XR_MOVE_SPEED * dt;
-    let dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
-    let dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
-
-    const proposedMove = { x: dx, y: 0, z: dz };
-    const allowedMove = checkVRCollision(proposedMove);
-    dx = allowedMove.x;
-    dz = allowedMove.z;
-
-    const cos = Math.cos(xrYaw);
-    const sin = Math.sin(xrYaw);
-    xrOffset.x -= dx * cos + dz * sin;
-    xrOffset.z -= -dx * sin + dz * cos;
+    const dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
+    const dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
+    applyXRMove(dx, dz);
   }
 
   _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
@@ -1911,8 +1914,7 @@ function updateXRLocomotion(now) {
     { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z },
     { x: _xrTurnQuat.x, y: _xrTurnQuat.y, z: _xrTurnQuat.z, w: _xrTurnQuat.w }
   );
-  const newRefSpace = xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform);
-  renderer.xr.setReferenceSpace(newRefSpace);
+  renderer.xr.setReferenceSpace(xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform));
 }
 
 // ────────────────────────────────────────────

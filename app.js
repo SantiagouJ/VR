@@ -1027,11 +1027,13 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 // ────────────────────────────────────────────
 let isInVR = false;
 
-// Locomoción VR (Meta Quest 3): movimiento con stick derecho; panel de acabados en mano izquierda
+// Locomoción VR (Meta Quest 3): stick izq. mover · stick der. girar cámara · panel en mano izquierda
 let xrBaseReferenceSpace = null;
 const xrOffset = { x: 0, y: 0, z: 0 };
+let xrYaw = 0;
 let xrLastFrameTime = 0;
 const XR_MOVE_SPEED = 2.0;
+const XR_TURN_SPEED = 2.2;
 const XR_STICK_DEADZONE = 0.18;
 
 // VR Player height adjustment (positive = lower viewpoint, makes you "shorter")
@@ -1045,6 +1047,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   xrOffset.x = 0; 
   xrOffset.y = VR_HEIGHT_OFFSET;  // Apply height offset to lower viewpoint
   xrOffset.z = 0;
+  xrYaw = 0;
   xrLastFrameTime = 0;
   
   // Resume audio context and play ambient music in VR
@@ -1118,7 +1121,7 @@ const xrControllers = [0, 1].map(i => {
 // ────────────────────────────────────────────
 const VR_PANEL_W = 800;
 const VR_PANEL_H = 640;
-const VR_PANEL_SCALE_X = 0.9;
+const VR_PANEL_SCALE_X = 0.62;
 const VR_PANEL_SCALE_Y = VR_PANEL_SCALE_X * (VR_PANEL_H / VR_PANEL_W);
 
 let vrPanelVisible = false;
@@ -1210,9 +1213,9 @@ function renderVRTutorial() {
   const controls = [
     { icon: '🎯', title: 'Trigger (Gatillo)', desc: 'Seleccionar superficies y elementos del menú' },
     { icon: '✊', title: 'Grip (Agarre)', desc: 'Sostener y mover el panel de materiales' },
-    { icon: '🕹️', title: 'Stick Derecho', desc: 'Moverte por el apartamento (con colisión con paredes)' },
+    { icon: '🕹️', title: 'Stick Izquierdo', desc: 'Moverte por el apartamento (con colisión con paredes)' },
+    { icon: '🔄', title: 'Stick Derecho', desc: 'Girar la cámara (rotación suave)' },
     { icon: '📋', title: 'Panel de acabados', desc: 'Aparece en la mano izquierda al seleccionar una superficie' },
-    { icon: '🧍', title: 'Girar', desc: 'Gira con el cuerpo o la cabeza para cambiar de dirección' },
     { icon: '👆', title: 'Apuntar', desc: 'Apunta a superficies para ver el rayo láser' },
   ];
   
@@ -1572,7 +1575,7 @@ function renderVRPanel() {
   vrPanelTexture.needsUpdate = true;
 }
 
-const VR_LEFT_PANEL_LOCAL_POS = new THREE.Vector3(0, 0.07, -0.13);
+const VR_LEFT_PANEL_LOCAL_POS = new THREE.Vector3(0, 0.06, -0.11);
 const VR_LEFT_PANEL_LOCAL_EULER = new THREE.Euler(-0.4, 0, 0);
 
 function getXRControllerEntry(handedness) {
@@ -1811,13 +1814,12 @@ function updateVRPointer() {
 }
 
 // ────────────────────────────────────────────
-// WebXR: Locomoción Meta Quest 3 (stick derecho = mover)
-// ────────────────────────────────────────────
+// WebXR: Locomoción Meta Quest 3 (stick izq. = mover · stick der. = girar cámara)
 const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
-const _xrIdentityQuat = { x: 0, y: 0, z: 0, w: 1 };
+const _xrTurnQuat = new THREE.Quaternion();
 
 function updateXRLocomotion(now) {
   if (!isInVR || !xrBaseReferenceSpace) return;
@@ -1830,20 +1832,26 @@ function updateXRLocomotion(now) {
   if (dt === 0) return;
 
   let moveX = 0, moveZ = 0;
+  let turnX = 0;
 
   for (const source of session.inputSources) {
     if (!source.gamepad) continue;
     const axes = source.gamepad.axes;
     if (!axes || axes.length < 4) continue;
 
-    // Quest / Quest Pro: thumbstick en axes[2], axes[3] por mando
     const sx = axes[2] || 0;
     const sy = axes[3] || 0;
 
-    if (source.handedness === 'right') {
+    if (source.handedness === 'left') {
       if (Math.abs(sx) > XR_STICK_DEADZONE) moveX += sx;
       if (Math.abs(sy) > XR_STICK_DEADZONE) moveZ += sy;
+    } else if (source.handedness === 'right') {
+      if (Math.abs(sx) > XR_STICK_DEADZONE) turnX += sx;
     }
+  }
+
+  if (turnX !== 0) {
+    xrYaw -= turnX * XR_TURN_SPEED * dt;
   }
 
   // Movimiento relativo a la dirección de la cabeza
@@ -1860,21 +1868,21 @@ function updateXRLocomotion(now) {
     let dx = (_xrForward.x * -moveZ + _xrRight.x * moveX) * speed;
     let dz = (_xrForward.z * -moveZ + _xrRight.z * moveX) * speed;
 
-    // Apply wall collision detection
     const proposedMove = { x: dx, y: 0, z: dz };
     const allowedMove = checkVRCollision(proposedMove);
     dx = allowedMove.x;
     dz = allowedMove.z;
 
-    // El offset del reference space va en sentido contrario al movimiento del jugador
-    xrOffset.x -= dx;
-    xrOffset.z -= dz;
+    const cos = Math.cos(xrYaw);
+    const sin = Math.sin(xrYaw);
+    xrOffset.x -= dx * cos + dz * sin;
+    xrOffset.z -= -dx * sin + dz * cos;
   }
 
-  // Aplica offset acumulado al reference space (sin yaw artificial; giras con el cuerpo/cabeza)
+  _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
   const offsetTransform = new XRRigidTransform(
-    { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z, w: 1 },
-    _xrIdentityQuat
+    { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z },
+    { x: _xrTurnQuat.x, y: _xrTurnQuat.y, z: _xrTurnQuat.z, w: _xrTurnQuat.w }
   );
   const newRefSpace = xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform);
   renderer.xr.setReferenceSpace(newRefSpace);

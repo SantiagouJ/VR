@@ -1383,10 +1383,11 @@ function handleVRTutorialHit(uv) {
 // ────────────────────────────────────────────
 // VR Wall Collision Detection
 // ────────────────────────────────────────────
-// Grosor XZ del jugador + tres rayos paralelos al movimiento (capsula estrecha) para muros y esquinas.
-const VR_PLAYER_SKIN = 0.22;
-const VR_COLLISION_HEIGHT_OFFSETS = [-0.95, -0.55, -0.15];
-const VR_MOVE_SUBSTEP = 0.055;
+const VR_PLAYER_SKIN = 0.25;
+const VR_COLLISION_HEIGHT_OFFSETS = [0.2, 0.9, 1.6];
+const VR_MOVE_SUBSTEP = 0.04;
+const VR_NORMAL_Y_THRESHOLD = 0.42;
+const VR_ASSUMED_HEAD_TO_FLOOR = 1.6;
 const _collisionRaycaster = new THREE.Raycaster();
 const _collisionDirection = new THREE.Vector3();
 const _vrWallNormal = new THREE.Vector3();
@@ -1395,6 +1396,43 @@ const _vrOrigin = new THREE.Vector3();
 const _vrRayFrom = new THREE.Vector3();
 const _vrPerp = new THREE.Vector3();
 const _vrHeadPos = new THREE.Vector3();
+let _collisionMeshes = null;
+
+function invalidateCollisionMeshes() {
+  _collisionMeshes = null;
+}
+
+function buildCollisionMeshes() {
+  if (!loadedModel || meshParts.length === 0) {
+    _collisionMeshes = [];
+    return;
+  }
+
+  _collisionMeshes = meshParts.filter((mesh) => {
+    if (!mesh || mesh.userData?.noCollision) return false;
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = box.getSize(new THREE.Vector3());
+    return Math.max(size.x, size.y, size.z) >= 0.05;
+  });
+
+  loadedModel.updateMatrixWorld(true);
+}
+
+function getCollisionMeshes() {
+  if (_collisionMeshes === null) buildCollisionMeshes();
+  return _collisionMeshes;
+}
+
+function getHitWallNormal(hit, rayDir, outNormal) {
+  if (!hit?.face) return false;
+  outNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+  if (Math.abs(outNormal.y) > VR_NORMAL_Y_THRESHOLD) return false;
+  outNormal.y = 0;
+  if (outNormal.lengthSq() < 1e-8) return false;
+  outNormal.normalize();
+  if (outNormal.dot(rayDir) > 0) outNormal.negate();
+  return true;
+}
 
 function checkVRCollision(proposedOffset) {
   const dx = proposedOffset.x;
@@ -1406,29 +1444,32 @@ function checkVRCollision(proposedOffset) {
 
   const xrCam = renderer.xr.getCamera();
   xrCam.getWorldPosition(_vrHeadPos);
+  const floorY = _vrHeadPos.y - VR_ASSUMED_HEAD_TO_FLOOR;
+  if (loadedModel) loadedModel.updateMatrixWorld(true);
 
   // Rays must point where the player is moving (world-space dx, dz).
   // previously used (-dx,-dz), which cast backward and never blocked walls ahead.
   const stepLen = Math.hypot(dx, dz);
   if (stepLen < 1e-6) return proposedOffset;
 
-  function castVerticalWall(from, dir, far) {
+  function castWallRay(from, dir, far) {
     _collisionRaycaster.set(from, dir);
     _collisionRaycaster.far = far;
-    const hits = _collisionRaycaster.intersectObjects(meshParts, true);
+    const meshes = getCollisionMeshes();
+    if (!meshes || meshes.length === 0) return null;
+    const hits = _collisionRaycaster.intersectObjects(meshes, false);
     for (const h of hits) {
-      if (!h.face) continue;
-      const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
-      if (Math.abs(n.y) < 0.55) return h;
+      if (h.distance < 0.001) continue;
+      if (getHitWallNormal(h, dir, _vrWallNormal)) return h;
     }
     return null;
   }
 
   function castVerticalWallAtHeights(fromXZ, dir, far) {
     let bestHit = null;
-    for (const yOff of VR_COLLISION_HEIGHT_OFFSETS) {
-      _vrOrigin.set(fromXZ.x, _vrHeadPos.y + yOff, fromXZ.z);
-      const h = castVerticalWall(_vrOrigin, dir, far);
+    for (const hOff of VR_COLLISION_HEIGHT_OFFSETS) {
+      _vrOrigin.set(fromXZ.x, floorY + hOff, fromXZ.z);
+      const h = castWallRay(_vrOrigin, dir, far);
       if (h && (!bestHit || h.distance < bestHit.distance)) bestHit = h;
     }
     return bestHit;
@@ -1480,10 +1521,7 @@ function checkVRCollision(proposedOffset) {
   // Nothing within this stride along movement (far extends by skin only for grazing).
   if (!hit || hit.distance > stepLen + 0.03) return proposedOffset;
 
-  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-  _vrWallNormal.set(n.x, 0, n.z);
-  if (_vrWallNormal.lengthSq() < 1e-6) return proposedOffset;
-  _vrWallNormal.normalize();
+  if (!getHitWallNormal(hit, _collisionDirection, _vrWallNormal)) return proposedOffset;
 
   const walkX = dx / stepLen;
   const walkZ = dz / stepLen;
@@ -2254,6 +2292,7 @@ function processModel(gltf, filename) {
     scene.remove(loadedModel);
     loadedModel = null;
   }
+  invalidateCollisionMeshes();
 
   meshParts.length = 0;
   originalMaterials.clear();
@@ -2295,6 +2334,7 @@ function processModel(gltf, filename) {
 
   loadedModel = model;
   scene.add(model);
+  invalidateCollisionMeshes();
 
   box.setFromObject(model);
   const newSize = box.getSize(new THREE.Vector3());
@@ -3056,6 +3096,7 @@ document.getElementById('btn-load-new').addEventListener('click', () => {
     scene.remove(loadedModel);
     loadedModel = null;
   }
+  invalidateCollisionMeshes();
   clearHighlight();
 
   meshParts.length = 0;

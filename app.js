@@ -1387,6 +1387,8 @@ function handleVRTutorialHit(uv) {
 // ────────────────────────────────────────────
 // Grosor XZ del jugador + tres rayos paralelos al movimiento (capsula estrecha) para muros y esquinas.
 const VR_PLAYER_SKIN = 0.22;
+const VR_COLLISION_HEIGHT_OFFSETS = [-0.95, -0.55, -0.15];
+const VR_MOVE_SUBSTEP = 0.055;
 const _collisionRaycaster = new THREE.Raycaster();
 const _collisionDirection = new THREE.Vector3();
 const _vrWallNormal = new THREE.Vector3();
@@ -1394,6 +1396,7 @@ const _vrSlideDir = new THREE.Vector3();
 const _vrOrigin = new THREE.Vector3();
 const _vrRayFrom = new THREE.Vector3();
 const _vrPerp = new THREE.Vector3();
+const _vrHeadPos = new THREE.Vector3();
 
 function checkVRCollision(proposedOffset) {
   const dx = proposedOffset.x;
@@ -1404,9 +1407,7 @@ function checkVRCollision(proposedOffset) {
   }
 
   const xrCam = renderer.xr.getCamera();
-  const playerPos = new THREE.Vector3();
-  xrCam.getWorldPosition(playerPos);
-  _vrOrigin.set(playerPos.x, playerPos.y - 0.35, playerPos.z);
+  xrCam.getWorldPosition(_vrHeadPos);
 
   // Rays must point where the player is moving (world-space dx, dz). xrOffset -= (dx,dz)
   // previously used (-dx,-dz), which cast backward and never blocked walls ahead.
@@ -1425,6 +1426,16 @@ function checkVRCollision(proposedOffset) {
     return null;
   }
 
+  function castVerticalWallAtHeights(fromXZ, dir, far) {
+    let bestHit = null;
+    for (const yOff of VR_COLLISION_HEIGHT_OFFSETS) {
+      _vrOrigin.set(fromXZ.x, _vrHeadPos.y + yOff, fromXZ.z);
+      const h = castVerticalWall(_vrOrigin, dir, far);
+      if (h && (!bestHit || h.distance < bestHit.distance)) bestHit = h;
+    }
+    return bestHit;
+  }
+
   // Three parallel rays perpendicular to travel (narrow capsule) — fewer gaps at corners / posts.
   function castVerticalWallCapsule(dirNorm, far) {
     let bestHit = null;
@@ -1437,11 +1448,11 @@ function checkVRCollision(proposedOffset) {
     const lateral = VR_PLAYER_SKIN * 0.88;
     for (const off of [0, lateral, -lateral]) {
       _vrRayFrom.set(
-        _vrOrigin.x + _vrPerp.x * off,
-        _vrOrigin.y,
-        _vrOrigin.z + _vrPerp.z * off
+        _vrHeadPos.x + _vrPerp.x * off,
+        _vrHeadPos.y,
+        _vrHeadPos.z + _vrPerp.z * off
       );
-      const h = castVerticalWall(_vrRayFrom, dirNorm, far);
+      const h = castVerticalWallAtHeights(_vrRayFrom, dirNorm, far);
       if (h && (!bestHit || h.distance < bestHit.distance)) bestHit = h;
     }
     return bestHit;
@@ -1975,10 +1986,21 @@ function getXRMoveDirection(moveX, moveZ, headOrientation, yaw, outForward, outR
 
 function applyXRMove(dx, dz) {
   if (dx === 0 && dz === 0) return;
+  const dist = Math.hypot(dx, dz);
+  const steps = Math.max(1, Math.ceil(dist / VR_MOVE_SUBSTEP));
+  const stepX = dx / steps;
+  const stepZ = dz / steps;
 
-  const allowedMove = checkVRCollision({ x: dx, y: 0, z: dz });
-  xrOffset.x -= allowedMove.x;
-  xrOffset.z -= allowedMove.z;
+  for (let i = 0; i < steps; i++) {
+    const allowedMove = checkVRCollision({ x: stepX, y: 0, z: stepZ });
+    xrOffset.x -= allowedMove.x;
+    xrOffset.z -= allowedMove.z;
+
+    // If fully blocked this sub-step, stop early to avoid "pushing through" on long frames.
+    if (Math.abs(allowedMove.x) < 1e-6 && Math.abs(allowedMove.z) < 1e-6) {
+      break;
+    }
+  }
 }
 
 function commitXRReferenceSpace() {

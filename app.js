@@ -1206,9 +1206,9 @@ scene.add(vrPointerDot);
 // ────────────────────────────────────────────
 // VR Tutorial Panel
 // ────────────────────────────────────────────
-const VR_TUTORIAL_W = 700;
-const VR_TUTORIAL_H = 500;
-const VR_TUTORIAL_SCALE_X = 0.8;
+const VR_TUTORIAL_W = 760;
+const VR_TUTORIAL_H = 560;
+const VR_TUTORIAL_SCALE_X = 0.72;
 const VR_TUTORIAL_SCALE_Y = VR_TUTORIAL_SCALE_X * (VR_TUTORIAL_H / VR_TUTORIAL_W);
 
 let vrTutorialVisible = false;
@@ -1233,6 +1233,10 @@ scene.add(vrTutorialMesh);
 function renderVRTutorial() {
   const ctx = vrTutorialCtx;
   const W = VR_TUTORIAL_W, H = VR_TUTORIAL_H;
+  const sidePadding = 42;
+  const titleY = 42;
+  const listStartY = 106;
+  const lineHeight = 58;
   
   ctx.clearRect(0, 0, W, H);
   
@@ -1247,17 +1251,17 @@ function renderVRTutorial() {
   
   // Title
   ctx.fillStyle = '#64B5F6';
-  ctx.font = 'bold 32px Inter, system-ui, sans-serif';
+  ctx.font = 'bold 30px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Controles VR - Meta Quest 3', W / 2, 45);
+  ctx.fillText('Controles VR - Meta Quest 3', W / 2, titleY);
   
   // Divider
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(40, 80);
-  ctx.lineTo(W - 40, 80);
+  ctx.moveTo(sidePadding, 76);
+  ctx.lineTo(W - sidePadding, 76);
   ctx.stroke();
   
   // Controls list
@@ -1271,31 +1275,30 @@ function renderVRTutorial() {
   ];
   
   ctx.textAlign = 'left';
-  let y = 110;
-  const lineHeight = 70;
+  let y = listStartY;
   
   controls.forEach(ctrl => {
     // Icon
-    ctx.font = '28px sans-serif';
-    ctx.fillText(ctrl.icon, 50, y + 20);
+    ctx.font = '26px sans-serif';
+    ctx.fillText(ctrl.icon, sidePadding + 2, y + 16);
     
     // Title
     ctx.fillStyle = '#f0f0f5';
-    ctx.font = 'bold 20px Inter, system-ui, sans-serif';
-    ctx.fillText(ctrl.title, 100, y + 10);
+    ctx.font = 'bold 19px Inter, system-ui, sans-serif';
+    ctx.fillText(ctrl.title, sidePadding + 56, y + 8);
     
     // Description
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.font = '16px Inter, system-ui, sans-serif';
-    ctx.fillText(ctrl.desc, 100, y + 38);
+    ctx.font = '15px Inter, system-ui, sans-serif';
+    ctx.fillText(ctrl.desc, sidePadding + 56, y + 33);
     
     y += lineHeight;
   });
   
   // Dismiss button
-  const btnW = 200, btnH = 50;
+  const btnW = 220, btnH = 50;
   const btnX = (W - btnW) / 2;
-  const btnY = H - 70;
+  const btnY = H - 86;
   
   ctx.beginPath();
   ctx.roundRect(btnX, btnY, btnW, btnH, 12);
@@ -1314,8 +1317,8 @@ function renderVRTutorial() {
   
   // Hint at bottom
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.font = '13px Inter, system-ui, sans-serif';
-  ctx.fillText('Presiona Trigger en "Entendido" para cerrar', W / 2, H - 15);
+  ctx.font = '14px Inter, system-ui, sans-serif';
+  ctx.fillText('Presiona Trigger en "Entendido" para cerrar', W / 2, H - 24);
   
   vrTutorialTexture.needsUpdate = true;
 }
@@ -1330,8 +1333,8 @@ function openVRTutorial() {
   dir.y = 0;
   dir.normalize();
   
-  vrTutorialMesh.position.copy(pos).addScaledVector(dir, 1.2);
-  vrTutorialMesh.position.y = pos.y + 0.1;
+  vrTutorialMesh.position.copy(pos).addScaledVector(dir, 1.45);
+  vrTutorialMesh.position.y = pos.y + 0.03;
   vrTutorialMesh.lookAt(pos.x, vrTutorialMesh.position.y, pos.z);
   
   vrTutorialMesh.visible = true;

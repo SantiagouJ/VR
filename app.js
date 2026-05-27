@@ -14,9 +14,13 @@ let ambientGainNode = null;
 let uiGainNode = null;
 let ambientSource = null;
 let ambientBuffer = null;
-let uiBuffer = null;
+let uiSelectBuffer = null;
+let uiCloseBuffer = null;
 let audioInitialized = false;
 let ambientPlaying = false;
+const DEFAULT_AMBIENT_VOLUME = 0.3;
+const VR_AMBIENT_VOLUME = 0.42;
+const DEFAULT_UI_VOLUME = 0.5;
 
 function createAmbientMusic() {
   const sampleRate = audioContext.sampleRate;
@@ -57,29 +61,50 @@ function createAmbientMusic() {
   return buffer;
 }
 
-function createUISound() {
+function createUISelectSound() {
   const sampleRate = audioContext.sampleRate;
-  const duration = 0.3;
+  const duration = 0.24;
   const numSamples = sampleRate * duration;
   const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
   const channel = buffer.getChannelData(0);
   
   for (let i = 0; i < numSamples; i++) {
     const t = i / sampleRate;
-    const envelope = Math.exp(-t * 12) * Math.min(1, t * 100);
+    const envelope = Math.exp(-t * 14) * Math.min(1, t * 130);
     
     let sample = 0;
-    sample += Math.sin(2 * Math.PI * 880 * t) * 0.3;
-    sample += Math.sin(2 * Math.PI * 1320 * t) * 0.2;
-    sample += Math.sin(2 * Math.PI * 1760 * t) * 0.15;
-    sample += Math.sin(2 * Math.PI * 2200 * t) * 0.1;
+    sample += Math.sin(2 * Math.PI * 980 * t) * 0.28;
+    sample += Math.sin(2 * Math.PI * 1480 * t) * 0.2;
+    sample += Math.sin(2 * Math.PI * 1980 * t) * 0.1;
     
-    const sweep = 880 + (1 - Math.exp(-t * 20)) * 440;
-    sample += Math.sin(2 * Math.PI * sweep * t) * 0.2;
+    const sweep = 940 + (1 - Math.exp(-t * 24)) * 360;
+    sample += Math.sin(2 * Math.PI * sweep * t) * 0.22;
     
     channel[i] = sample * envelope * 0.4;
   }
   
+  return buffer;
+}
+
+function createUICloseSound() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 0.2;
+  const numSamples = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
+  const channel = buffer.getChannelData(0);
+
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    const envelope = Math.exp(-t * 16) * Math.min(1, t * 150);
+    const downSweep = 720 - (1 - Math.exp(-t * 18)) * 420;
+
+    let sample = 0;
+    sample += Math.sin(2 * Math.PI * downSweep * t) * 0.34;
+    sample += Math.sin(2 * Math.PI * (downSweep * 0.5) * t) * 0.18;
+
+    channel[i] = sample * envelope * 0.36;
+  }
+
   return buffer;
 }
 
@@ -91,15 +116,16 @@ function initAudio() {
   }
   
   ambientGainNode = audioContext.createGain();
-  ambientGainNode.gain.value = 0.3;
+  ambientGainNode.gain.value = DEFAULT_AMBIENT_VOLUME;
   ambientGainNode.connect(audioContext.destination);
   
   uiGainNode = audioContext.createGain();
-  uiGainNode.gain.value = 0.5;
+  uiGainNode.gain.value = DEFAULT_UI_VOLUME;
   uiGainNode.connect(audioContext.destination);
   
   ambientBuffer = createAmbientMusic();
-  uiBuffer = createUISound();
+  uiSelectBuffer = createUISelectSound();
+  uiCloseBuffer = createUICloseSound();
   
   audioInitialized = true;
 }
@@ -123,13 +149,35 @@ function stopAmbientMusic() {
   }
 }
 
-function playUISound() {
+function playUIBuffer(buffer) {
   if (!audioInitialized) initAudio();
+  if (!buffer) return;
   
   const source = audioContext.createBufferSource();
-  source.buffer = uiBuffer;
+  source.buffer = buffer;
   source.connect(uiGainNode);
   source.start();
+}
+
+function playUISelectSound() {
+  playUIBuffer(uiSelectBuffer);
+}
+
+function playUICloseSound() {
+  playUIBuffer(uiCloseBuffer);
+}
+
+// Backward compatibility for existing UI triggers.
+function playUISound() {
+  playUISelectSound();
+}
+
+function setAmbientMixForVR(enabled) {
+  if (!audioInitialized || !ambientGainNode) return;
+  const target = enabled ? VR_AMBIENT_VOLUME : DEFAULT_AMBIENT_VOLUME;
+  const now = audioContext.currentTime;
+  ambientGainNode.gain.cancelScheduledValues(now);
+  ambientGainNode.gain.setTargetAtTime(target, now, 0.2);
 }
 
 function setAmbientVolume(volume) {
@@ -1059,6 +1107,7 @@ renderer.xr.addEventListener('sessionstart', () => {
     initAudio();
     playAmbientMusic();
   }
+  setAmbientMixForVR(true);
   
   // Show VR tutorial after a short delay
   if (loadedModel) {
@@ -1073,6 +1122,7 @@ renderer.xr.addEventListener('sessionend', () => {
   orbitControls.enabled = true;
   closeVRPanel();
   closeVRTutorial();
+  setAmbientMixForVR(false);
   xrBaseReferenceSpace = null;
 });
 
@@ -1302,7 +1352,7 @@ function handleVRTutorialHit(uv) {
     const r = vrTutorialDismissRegion;
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
       closeVRTutorial();
-      playUISound();
+      playUICloseSound();
       return true;
     }
   }
@@ -1641,6 +1691,7 @@ function handleVRPanelHit(uv) {
 
   if (close && x >= close.x && x <= close.x + close.w && y >= close.y && y <= close.y + close.h) {
     closeVRPanel();
+    playUICloseSound();
     return;
   }
 
@@ -1648,6 +1699,7 @@ function handleVRPanelHit(uv) {
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
       vrPanelActiveCategory = r.cat;
       renderVRPanel();
+      playUISelectSound();
       return;
     }
   }
@@ -1656,6 +1708,7 @@ function handleVRPanelHit(uv) {
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
       applyTileFinish(r.tile);
       renderVRPanel();
+      playUISelectSound();
       return;
     }
   }
@@ -1734,7 +1787,7 @@ function startDraggingMesh(mesh, controller) {
   const ctrlInv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
   vrDragState.offsetMatrix.copy(mesh.matrixWorld).premultiply(ctrlInv);
   
-  playUISound();
+  playUISelectSound();
 }
 
 function stopDraggingMesh() {
@@ -1769,8 +1822,10 @@ function onXRSqueezeStart(event) {
   // If not grabbing the panel, toggle it
   if (vrPanelVisible) {
     closeVRPanel();
+    playUICloseSound();
   } else if (selectedMesh || selectedGroup) {
     openVRPanel();
+    playUISelectSound();
   }
 }
 
@@ -2466,7 +2521,7 @@ function selectMeshAndShowFinishes(mesh, index) {
   updateFilteredCatalogUI();
   highlightAppliedTile();
 
-  playUISound();
+  playUISelectSound();
 
   const currentColor = mesh.material?.color ? '#' + mesh.material.color.getHexString() : '#cccccc';
   solidPicker.value = currentColor;
@@ -2511,7 +2566,7 @@ function selectGroupAndShowFinishes(group) {
   updateFilteredCatalogUI();
   highlightAppliedTile();
 
-  playUISound();
+  playUISelectSound();
 
   const currentColor = selectedMesh?.material?.color ? '#' + selectedMesh.material.color.getHexString() : '#cccccc';
   solidPicker.value = currentColor;
@@ -3087,8 +3142,8 @@ if (audioToggleBtn) {
       setAmbientVolume(0);
       setUIVolume(0);
     } else {
-      setAmbientVolume(0.3);
-      setUIVolume(0.5);
+      setAmbientVolume(isInVR ? VR_AMBIENT_VOLUME : DEFAULT_AMBIENT_VOLUME);
+      setUIVolume(DEFAULT_UI_VOLUME);
     }
   });
 }

@@ -1094,9 +1094,9 @@ scene.add(new THREE.HemisphereLight(0xb0c4de, 0x8090a0, 0.6));
 let isInVR = false;
 
 // Locomoción VR (Meta Quest 3)
-// Estado del offset acumulado sobre local-floor: traslación base + yaw artificial.
+// Posición del jugador en mundo + yaw acumulado, separados.
 let xrBaseReferenceSpace = null;
-const xrOffset = { x: 0, y: 0, z: 0 };
+const xrPlayerPos = new THREE.Vector3(0, 0, 0);
 let xrYaw = 0;
 let xrLastFrameTime = 0;
 const XR_MOVE_SPEED = 2.0;
@@ -1111,9 +1111,7 @@ renderer.xr.addEventListener('sessionstart', async () => {
   isInVR = true;
   orbitControls.enabled = false;
   xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
-  xrOffset.x = 0; 
-  xrOffset.y = VR_HEIGHT_OFFSET;  // Apply height offset to lower viewpoint
-  xrOffset.z = 0;
+  xrPlayerPos.set(0, VR_HEIGHT_OFFSET, 0);
   xrYaw = 0;
   xrLastFrameTime = 0;
   
@@ -1409,7 +1407,7 @@ function checkVRCollision(proposedOffset) {
   const xrCam = renderer.xr.getCamera();
   xrCam.getWorldPosition(_vrHeadPos);
 
-  // Rays must point where the player is moving (world-space dx, dz). xrOffset -= (dx,dz)
+  // Rays must point where the player is moving (world-space dx, dz).
   // previously used (-dx,-dz), which cast backward and never blocked walls ahead.
   const stepLen = Math.hypot(dx, dz);
   if (stepLen < 1e-6) return proposedOffset;
@@ -1912,9 +1910,6 @@ const _xrForward = new THREE.Vector3();
 const _xrRight = new THREE.Vector3();
 const _xrUp = new THREE.Vector3(0, 1, 0);
 const _xrHeadQuat = new THREE.Quaternion();
-const _xrTurnQuat = new THREE.Quaternion();
-const _xrPivot = new THREE.Vector3();
-const _xrRelPos = new THREE.Vector3();
 
 function readXRStickInput(session) {
   let moveX = 0;
@@ -1940,28 +1935,12 @@ function readXRStickInput(session) {
   return { moveX, moveZ, turnX };
 }
 
-function getXRHeadWorldXZ(headLocal, yaw, out) {
-  const cosY = Math.cos(yaw);
-  const sinY = Math.sin(yaw);
-  out.x = xrOffset.x + headLocal.x * cosY - headLocal.z * sinY;
-  out.z = xrOffset.z + headLocal.x * sinY + headLocal.z * cosY;
-  return out;
-}
-
-function applyXRTurn(deltaYaw, headLocal, yawBeforeTurn) {
+function applyXRTurn(deltaYaw) {
   if (deltaYaw === 0) return;
-
-  getXRHeadWorldXZ(headLocal, yawBeforeTurn, _xrPivot);
-
-  _xrRelPos.set(xrOffset.x - _xrPivot.x, 0, xrOffset.z - _xrPivot.z);
-  const cos = Math.cos(deltaYaw);
-  const sin = Math.sin(deltaYaw);
-  xrOffset.x = _xrPivot.x + _xrRelPos.x * cos - _xrRelPos.z * sin;
-  xrOffset.z = _xrPivot.z + _xrRelPos.x * sin + _xrRelPos.z * cos;
-  xrYaw = yawBeforeTurn + deltaYaw;
+  xrYaw += deltaYaw;
 }
 
-function getXRMoveDirection(moveX, moveZ, headOrientation, yaw, outForward, outRight) {
+function getXRMoveDirectionWorld(moveX, moveZ, headOrientation) {
   _xrHeadQuat.set(
     headOrientation.x,
     headOrientation.y,
@@ -1969,22 +1948,20 @@ function getXRMoveDirection(moveX, moveZ, headOrientation, yaw, outForward, outR
     headOrientation.w
   );
 
-  outForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
-  _xrTurnQuat.setFromAxisAngle(_xrUp, yaw);
-  outForward.applyQuaternion(_xrTurnQuat);
-  outForward.y = 0;
-  if (outForward.lengthSq() < 1e-6) outForward.set(0, 0, -1);
-  else outForward.normalize();
+  _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
+  _xrForward.y = 0;
+  if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
+  else _xrForward.normalize();
 
-  outRight.crossVectors(outForward, _xrUp).normalize();
+  _xrRight.crossVectors(_xrForward, _xrUp).normalize();
 
   return {
-    x: (outForward.x * -moveZ + outRight.x * moveX),
-    z: (outForward.z * -moveZ + outRight.z * moveX),
+    x: (_xrForward.x * -moveZ + _xrRight.x * moveX),
+    z: (_xrForward.z * -moveZ + _xrRight.z * moveX),
   };
 }
 
-function applyXRMove(dx, dz) {
+function applyXRMoveWorld(dx, dz) {
   if (dx === 0 && dz === 0) return;
   const dist = Math.hypot(dx, dz);
   const steps = Math.max(1, Math.ceil(dist / VR_MOVE_SUBSTEP));
@@ -1993,8 +1970,8 @@ function applyXRMove(dx, dz) {
 
   for (let i = 0; i < steps; i++) {
     const allowedMove = checkVRCollision({ x: stepX, y: 0, z: stepZ });
-    xrOffset.x -= allowedMove.x;
-    xrOffset.z -= allowedMove.z;
+    xrPlayerPos.x += allowedMove.x;
+    xrPlayerPos.z += allowedMove.z;
 
     // If fully blocked this sub-step, stop early to avoid "pushing through" on long frames.
     if (Math.abs(allowedMove.x) < 1e-6 && Math.abs(allowedMove.z) < 1e-6) {
@@ -2004,10 +1981,11 @@ function applyXRMove(dx, dz) {
 }
 
 function commitXRReferenceSpace() {
-  _xrTurnQuat.setFromAxisAngle(_xrUp, xrYaw);
+  const sinY = Math.sin(xrYaw * 0.5);
+  const cosY = Math.cos(xrYaw * 0.5);
   const offsetTransform = new XRRigidTransform(
-    { x: xrOffset.x, y: xrOffset.y, z: xrOffset.z },
-    { x: _xrTurnQuat.x, y: _xrTurnQuat.y, z: _xrTurnQuat.z, w: _xrTurnQuat.w }
+    { x: xrPlayerPos.x, y: xrPlayerPos.y, z: xrPlayerPos.z, w: 1 },
+    { x: 0, y: sinY, z: 0, w: cosY }
   );
   renderer.xr.setReferenceSpace(xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform));
 }
@@ -2026,18 +2004,16 @@ function updateXRLocomotion(now, frame) {
   if (dt === 0) return;
 
   const { moveX, moveZ, turnX } = readXRStickInput(session);
-  const headLocal = viewerPose.transform.position;
   const headOrientation = viewerPose.transform.orientation;
-  const yawBeforeInput = xrYaw;
 
-  if (turnX !== 0) {
-    applyXRTurn(turnX * XR_TURN_SPEED * dt, headLocal, yawBeforeInput);
+  if (Math.abs(turnX) > XR_STICK_DEADZONE) {
+    applyXRTurn(turnX * XR_TURN_SPEED * dt);
   }
 
-  if (moveX !== 0 || moveZ !== 0) {
-    const dir = getXRMoveDirection(moveX, moveZ, headOrientation, yawBeforeInput, _xrForward, _xrRight);
+  if (Math.abs(moveX) > XR_STICK_DEADZONE || Math.abs(moveZ) > XR_STICK_DEADZONE) {
+    const dir = getXRMoveDirectionWorld(moveX, moveZ, headOrientation);
     const speed = XR_MOVE_SPEED * dt;
-    applyXRMove(dir.x * speed, dir.z * speed);
+    applyXRMoveWorld(dir.x * speed, dir.z * speed);
   }
 
   commitXRReferenceSpace();

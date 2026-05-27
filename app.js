@@ -22,6 +22,28 @@ const DEFAULT_AMBIENT_VOLUME = 0.3;
 const VR_AMBIENT_VOLUME = 0.42;
 const DEFAULT_UI_VOLUME = 0.5;
 
+async function unlockAudioContext() {
+  try {
+    if (audioContext.state !== 'running') {
+      await audioContext.resume();
+    }
+  } catch (err) {
+    console.warn('No se pudo reanudar AudioContext:', err);
+  }
+  if (!audioInitialized) initAudio();
+  return audioContext.state === 'running';
+}
+
+function ensureAudioFromXRGesture() {
+  unlockAudioContext().then((ok) => {
+    if (!ok) return;
+    if (isInVR && loadedModel && !ambientPlaying) {
+      playAmbientMusic();
+      setAmbientMixForVR(true);
+    }
+  });
+}
+
 function createAmbientMusic() {
   const sampleRate = audioContext.sampleRate;
   const duration = 30;
@@ -193,15 +215,11 @@ function setUIVolume(volume) {
 }
 
 document.addEventListener('click', () => {
-  if (!audioInitialized) {
-    initAudio();
-  }
+  unlockAudioContext();
 }, { once: true });
 
 document.addEventListener('touchstart', () => {
-  if (!audioInitialized) {
-    initAudio();
-  }
+  unlockAudioContext();
 }, { once: true });
 
 // ────────────────────────────────────────────
@@ -1089,7 +1107,7 @@ const XR_STICK_DEADZONE = 0.18;
 // Adjust this value if you feel too tall or too short in the apartment
 const VR_HEIGHT_OFFSET = 0.7;
 
-renderer.xr.addEventListener('sessionstart', () => {
+renderer.xr.addEventListener('sessionstart', async () => {
   isInVR = true;
   orbitControls.enabled = false;
   xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
@@ -1099,15 +1117,17 @@ renderer.xr.addEventListener('sessionstart', () => {
   xrYaw = 0;
   xrLastFrameTime = 0;
   
-  // Resume audio context and play ambient music in VR
-  if (audioContext.state === 'suspended') {
-    audioContext.resume();
-  }
+  // Quest browsers sometimes need explicit unlock on XR enter + first interaction.
+  await unlockAudioContext();
   if (loadedModel && !ambientPlaying) {
-    initAudio();
     playAmbientMusic();
   }
   setAmbientMixForVR(true);
+
+  // Retry shortly after session start for devices that delay audio routing on enter.
+  setTimeout(() => {
+    if (!audioMuted) ensureAudioFromXRGesture();
+  }, 250);
   
   // Show VR tutorial after a short delay
   if (loadedModel) {
@@ -1732,6 +1752,7 @@ function getXRRay(controller) {
 
 function onXRSelectStart(event) {
   if (!isInVR) return;
+  if (!audioMuted) ensureAudioFromXRGesture();
   const controller = event.target;
   const rc = getXRRay(controller);
 
@@ -1810,6 +1831,7 @@ function updateVRDrag() {
 
 function onXRSqueezeStart(event) {
   if (!isInVR) return;
+  if (!audioMuted) ensureAudioFromXRGesture();
   const controller = event.target;
   const rc = getXRRay(controller);
 

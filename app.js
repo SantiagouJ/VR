@@ -2018,11 +2018,31 @@ function applyXRMoveWorld(dx, dz) {
   }
 }
 
-function commitXRReferenceSpace() {
+function commitXRReferenceSpace(frame) {
+  if (!xrBaseReferenceSpace) return;
   const sinY = Math.sin(xrYaw * 0.5);
   const cosY = Math.cos(xrYaw * 0.5);
+
+  // Rotate around the player's own feet (physical position in base space),
+  // not around the world origin. Without this, any non-zero xrPlayerPos causes
+  // the player to swing in a large arc when turning.
+  const poseInBase = frame ? frame.getViewerPose(xrBaseReferenceSpace) : null;
+  let tx, tz;
+  if (poseInBase) {
+    const hx = poseInBase.transform.position.x;
+    const hz = poseInBase.transform.position.z;
+    const c = Math.cos(xrYaw);
+    const s = Math.sin(xrYaw);
+    // P = physical_feet_base - R(yaw) * desired_world_feet_pos
+    tx = hx - (xrPlayerPos.x * c - xrPlayerPos.z * s);
+    tz = hz - (xrPlayerPos.x * s + xrPlayerPos.z * c);
+  } else {
+    tx = xrPlayerPos.x;
+    tz = xrPlayerPos.z;
+  }
+
   const offsetTransform = new XRRigidTransform(
-    { x: xrPlayerPos.x, y: xrPlayerPos.y, z: xrPlayerPos.z, w: 1 },
+    { x: tx, y: xrPlayerPos.y, z: tz, w: 1 },
     { x: 0, y: sinY, z: 0, w: cosY }
   );
   renderer.xr.setReferenceSpace(xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform));
@@ -2044,17 +2064,19 @@ function updateXRLocomotion(now, frame) {
   const { moveX, moveZ, turnX } = readXRStickInput(session);
   const headOrientation = viewerPose.transform.orientation;
 
-  if (Math.abs(turnX) > XR_STICK_DEADZONE) {
-    applyXRTurn(turnX * XR_TURN_SPEED * dt);
-  }
-
+  // Move first so direction is computed from the current frame's orientation,
+  // then apply turn so both can be committed together in one reference-space update.
   if (Math.abs(moveX) > XR_STICK_DEADZONE || Math.abs(moveZ) > XR_STICK_DEADZONE) {
     const dir = getXRMoveDirectionWorld(moveX, moveZ, headOrientation);
     const speed = XR_MOVE_SPEED * dt;
     applyXRMoveWorld(dir.x * speed, dir.z * speed);
   }
 
-  commitXRReferenceSpace();
+  if (Math.abs(turnX) > XR_STICK_DEADZONE) {
+    applyXRTurn(turnX * XR_TURN_SPEED * dt);
+  }
+
+  commitXRReferenceSpace(frame);
 }
 
 // ────────────────────────────────────────────

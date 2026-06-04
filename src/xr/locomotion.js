@@ -16,7 +16,22 @@ export let xrLastFrameTime = 0;
 
 export function resetLocomotionState() {
   xrBaseReferenceSpace = renderer.xr.getReferenceSpace();
-  xrPlayerPos.set(0, VR_HEIGHT_OFFSET, 0);
+
+  // Compute height offset so the virtual eye lands at ~70% of the model's height.
+  // This places the user naturally inside the apartment regardless of how the model
+  // was scaled. Falls back to VR_HEIGHT_OFFSET if no model is loaded yet.
+  let heightOffset = VR_HEIGHT_OFFSET;
+  if (state.loadedModel) {
+    const box = new THREE.Box3().setFromObject(state.loadedModel);
+    const modelH = box.max.y - box.min.y;
+    if (modelH > 0.1) {
+      // physicalHead = 1.7 m (assumed average standing eye height in tracking space).
+      // heightOffset = physical - virtual: positive = lower the virtual eye.
+      heightOffset = 1.7 - modelH * 0.70;
+    }
+  }
+
+  xrPlayerPos.set(0, heightOffset, 0);
   xrYaw = 0;
   xrLastFrameTime = 0;
 }

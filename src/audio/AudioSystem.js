@@ -34,35 +34,93 @@ export function ensureAudioFromXRGesture() {
   });
 }
 
+// Elevator/lounge music: Cmaj7 → Am7 → Fmaj7 → G7 (7.5s each, 30s loop)
+// Bass + warm pad chords + vibraphone melody + subtle hi-hats + reverb
 function createAmbientMusic() {
-  const sampleRate = audioContext.sampleRate;
-  const duration = 30;
-  const numSamples = sampleRate * duration;
-  const buffer = audioContext.createBuffer(2, numSamples, sampleRate);
-  const leftChannel = buffer.getChannelData(0);
-  const rightChannel = buffer.getChannelData(1);
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const baseFreq = 55;
-    let sample = 0;
-    sample += Math.sin(2 * Math.PI * baseFreq * t) * 0.15;
-    sample += Math.sin(2 * Math.PI * baseFreq * 1.5 * t) * 0.08;
-    sample += Math.sin(2 * Math.PI * baseFreq * 2 * t) * 0.05;
-    sample += Math.sin(2 * Math.PI * baseFreq * 3 * t) * 0.03;
-    const lfoFreq = 0.05;
-    const lfo = Math.sin(2 * Math.PI * lfoFreq * t) * 0.5 + 0.5;
-    sample += Math.sin(2 * Math.PI * (baseFreq * 4) * t) * 0.02 * lfo;
-    const pad1 = Math.sin(2 * Math.PI * 110 * t + Math.sin(2 * Math.PI * 0.1 * t) * 2) * 0.04;
-    const pad2 = Math.sin(2 * Math.PI * 165 * t + Math.sin(2 * Math.PI * 0.08 * t) * 2) * 0.03;
-    const pad3 = Math.sin(2 * Math.PI * 220 * t + Math.sin(2 * Math.PI * 0.12 * t) * 2) * 0.02;
-    sample += pad1 + pad2 + pad3;
-    const envelope = Math.min(1, t / 2) * Math.min(1, (duration - t) / 2);
-    sample *= envelope * 0.5;
-    const stereoOffset = Math.sin(2 * Math.PI * 0.03 * t) * 0.3;
-    leftChannel[i] = sample * (1 - stereoOffset * 0.5);
-    rightChannel[i] = sample * (1 + stereoOffset * 0.5);
+  const SR = audioContext.sampleRate;
+  const DUR = 30;
+  const N = SR * DUR;
+  const buf = audioContext.createBuffer(2, N, SR);
+  const dry = new Float32Array(N);
+
+  // Each chord: { bass Hz, pad tones Hz[], melody notes Hz[] }
+  const SEC = 7.5;
+  const chords = [
+    { b: 65.41,  p: [261.63, 329.63, 392.00, 493.88], m: [659.25, 587.33, 523.25, 392.00] }, // Cmaj7
+    { b: 55.00,  p: [220.00, 261.63, 329.63, 392.00], m: [440.00, 523.25, 493.88, 440.00] }, // Am7
+    { b: 87.31,  p: [349.23, 440.00, 523.25, 329.63], m: [349.23, 392.00, 440.00, 523.25] }, // Fmaj7
+    { b: 98.00,  p: [392.00, 493.88, 587.33, 349.23], m: [587.33, 493.88, 392.00, 587.33] }, // G7
+  ];
+
+  const MNOTE = SEC / 4;  // 1.875s per melody note
+  const BEAT  = 0.75;     // 80 BPM
+
+  for (let i = 0; i < N; i++) {
+    const t   = i / SR;
+    const sec = Math.min(3, Math.floor(t / SEC));
+    const ch  = chords[sec];
+    const tS  = t - sec * SEC;
+
+    // Smooth blend at chord boundaries
+    const XF = 0.5;
+    let blend = 1.0;
+    if (tS < XF) blend = tS / XF;
+    else if (sec < 3 && tS > SEC - XF) blend = (SEC - tS) / XF;
+
+    let s = 0;
+
+    // Bass — fundamental + octave, soft swell
+    const bEnv = Math.min(1, tS * 2.5) * blend;
+    s += Math.sin(2 * Math.PI * ch.b * t) * 0.14 * bEnv;
+    s += Math.sin(2 * Math.PI * ch.b * 2 * t) * 0.04 * bEnv;
+
+    // Pads — warm, slightly chorused
+    const pEnv = Math.min(1, tS * 1.2) * blend;
+    for (const f of ch.p) {
+      s += Math.sin(2 * Math.PI * f * t) * 0.026 * pEnv;
+      s += Math.sin(2 * Math.PI * f * 1.0035 * t) * 0.013 * pEnv;
+    }
+
+    // Melody — vibraphone: fast decay, 4th harmonic, subtle pitch vibrato
+    const mIdx  = Math.min(3, Math.floor(tS / MNOTE));
+    const tN    = tS - mIdx * MNOTE;
+    const vib   = 1 + Math.sin(2 * Math.PI * 5.5 * t) * 0.003;
+    const mEnv  = Math.min(1, tN / 0.025) * Math.exp(-tN * 2.0) * blend;
+    const mf    = ch.m[mIdx] * vib;
+    s += Math.sin(2 * Math.PI * mf * t) * 0.09 * mEnv;
+    s += Math.sin(2 * Math.PI * mf * 4 * t) * 0.022 * mEnv; // metallic 4th harmonic
+
+    // Hi-hats — on-beat and lighter off-beat
+    const tB  = t % BEAT;
+    s += (Math.random() * 2 - 1) * Math.exp(-tB * 600) * 0.022 * blend;
+    const tBo = (t + BEAT * 0.5) % BEAT;
+    s += (Math.random() * 2 - 1) * Math.exp(-tBo * 900) * 0.010 * blend;
+
+    // Global fade in/out for seamless loop
+    s *= Math.min(1, t) * Math.min(1, DUR - t);
+
+    dry[i] = s;
   }
-  return buffer;
+
+  // Multi-tap reverb (reads only from dry, no feedback)
+  const taps = [
+    { d: Math.floor(0.06 * SR), g: 0.22 },
+    { d: Math.floor(0.13 * SR), g: 0.13 },
+    { d: Math.floor(0.22 * SR), g: 0.07 },
+  ];
+  const L = buf.getChannelData(0);
+  const R = buf.getChannelData(1);
+  for (let i = 0; i < N; i++) {
+    let w = dry[i];
+    for (const tap of taps) {
+      if (i >= tap.d) w += dry[i - tap.d] * tap.g;
+    }
+    const pan = Math.sin(2 * Math.PI * 0.05 * (i / SR)) * 0.18;
+    L[i] = Math.max(-1, Math.min(1, w * (1 - pan)));
+    R[i] = Math.max(-1, Math.min(1, w * (1 + pan)));
+  }
+
+  return buf;
 }
 
 function createUISelectSound() {

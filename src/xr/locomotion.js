@@ -25,66 +25,51 @@ export function clearLocomotionState() {
   xrBaseReferenceSpace = null;
 }
 
-const _xrForward = new THREE.Vector3();
-const _xrRight = new THREE.Vector3();
-const _xrUp = new THREE.Vector3(0, 1, 0);
-const _xrHeadQuat = new THREE.Quaternion();
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _headQuat = new THREE.Quaternion();
 
-function readXRStickInput(session) {
-  let moveX = 0, moveZ = 0, turnX = 0;
-  for (const source of session.inputSources) {
-    if (!source.gamepad) continue;
-    const axes = source.gamepad.axes;
-    if (!axes || axes.length < 4) continue;
-    const sx = axes[2] || 0, sy = axes[3] || 0;
-    if (source.handedness === 'left') {
-      if (Math.abs(sx) > VR_STICK_DEADZONE) moveX += sx;
-      if (Math.abs(sy) > VR_STICK_DEADZONE) moveZ += sy;
-    } else if (source.handedness === 'right') {
-      if (Math.abs(sx) > VR_STICK_DEADZONE) turnX += sx;
-    }
+// Read left and right thumbstick values.
+// Meta Quest xr-standard mapping: thumbstick at axes[2] (X) and axes[3] (Y).
+// Falls back to axes[0]/[1] on controllers with fewer than 4 axes.
+function readSticks(session) {
+  let lx = 0, ly = 0, rx = 0;
+  for (const src of session.inputSources) {
+    if (!src.gamepad) continue;
+    const a = src.gamepad.axes;
+    if (!a || a.length < 2) continue;
+    const sx = (a.length >= 4 ? a[2] : a[0]) ?? 0;
+    const sy = (a.length >= 4 ? a[3] : a[1]) ?? 0;
+    if (src.handedness === 'left') { lx = sx; ly = sy; }
+    else if (src.handedness === 'right') { rx = sx; }
   }
-  return { moveX, moveZ, turnX };
+  return { lx, ly, rx };
 }
 
-function getXRMoveDirectionWorld(moveX, moveZ, headOrientation) {
-  _xrHeadQuat.set(headOrientation.x, headOrientation.y, headOrientation.z, headOrientation.w);
-  _xrForward.set(0, 0, -1).applyQuaternion(_xrHeadQuat);
-  _xrForward.y = 0;
-  if (_xrForward.lengthSq() < 1e-6) _xrForward.set(0, 0, -1);
-  else _xrForward.normalize();
-  _xrRight.crossVectors(_xrForward, _xrUp).normalize();
-  return {
-    x: _xrForward.x * -moveZ + _xrRight.x * moveX,
-    z: _xrForward.z * -moveZ + _xrRight.z * moveX,
-  };
-}
-
-function applyXRMoveWorld(dx, dz) {
-  if (dx === 0 && dz === 0) return;
-  const dist = Math.hypot(dx, dz);
-  const steps = Math.max(1, Math.ceil(dist / VR_MOVE_SUBSTEP));
-  const stepX = dx / steps, stepZ = dz / steps;
-  for (let i = 0; i < steps; i++) {
-    const allowed = checkVRCollision({ x: stepX, y: 0, z: stepZ });
-    xrPlayerPos.x += allowed.x;
-    xrPlayerPos.z += allowed.z;
-    if (Math.abs(allowed.x) < 1e-6 && Math.abs(allowed.z) < 1e-6) break;
-  }
-}
-
-function commitXRReferenceSpace() {
+// Build an offset reference space that places the tracking origin at xrPlayerPos
+// with orientation xrYaw in the virtual world.
+//
+// getOffsetReferenceSpace(T) maps: p_virtual = R^{-1}(p_tracking - T.pos)
+// We need p_virtual = xrPlayerPos when p_tracking = (0,0,0), so:
+//   T.pos = -R_y(xrYaw) * xrPlayerPos
+// where R_y(yaw) = [[c,0,s],[0,1,0],[-s,0,c]], giving:
+//   tx = -(c*px + s*pz),  tz = s*px - c*pz
+function commitPose() {
   if (!xrBaseReferenceSpace) return;
-  const sinY = Math.sin(xrYaw * 0.5);
-  const cosY = Math.cos(xrYaw * 0.5);
-  const c = Math.cos(xrYaw), s = Math.sin(xrYaw);
-  const tx = -(xrPlayerPos.x * c - xrPlayerPos.z * s);
-  const tz = -(xrPlayerPos.x * s + xrPlayerPos.z * c);
-  const offsetTransform = new XRRigidTransform(
-    { x: tx, y: xrPlayerPos.y, z: tz, w: 1 },
-    { x: 0, y: sinY, z: 0, w: cosY },
+  const yaw = xrYaw;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const px = xrPlayerPos.x;
+  const pz = xrPlayerPos.z;
+  renderer.xr.setReferenceSpace(
+    xrBaseReferenceSpace.getOffsetReferenceSpace(
+      new XRRigidTransform(
+        { x: -(c * px + s * pz), y: xrPlayerPos.y, z: s * px - c * pz, w: 1 },
+        { x: 0, y: Math.sin(yaw * 0.5), z: 0, w: Math.cos(yaw * 0.5) },
+      ),
+    ),
   );
-  renderer.xr.setReferenceSpace(xrBaseReferenceSpace.getOffsetReferenceSpace(offsetTransform));
 }
 
 export function updateXRLocomotion(now, frame) {
@@ -96,17 +81,49 @@ export function updateXRLocomotion(now, frame) {
   xrLastFrameTime = now;
   if (dt === 0) return;
 
-  const { moveX, moveZ, turnX } = readXRStickInput(session);
-  const viewerPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
-  if (!viewerPose) return;
+  const { lx, ly, rx } = readSticks(session);
 
-  if (Math.abs(moveX) > VR_STICK_DEADZONE || Math.abs(moveZ) > VR_STICK_DEADZONE) {
-    const dir = getXRMoveDirectionWorld(moveX, moveZ, viewerPose.transform.orientation);
-    const speed = VR_MOVE_SPEED * dt;
-    applyXRMoveWorld(dir.x * speed, dir.z * speed);
+  // Right stick X → smooth turn (rx > 0 = stick right = player turns right).
+  if (Math.abs(rx) > VR_STICK_DEADZONE) {
+    xrYaw += rx * VR_TURN_SPEED * dt;
   }
 
-  if (Math.abs(turnX) > VR_STICK_DEADZONE) xrYaw += turnX * VR_TURN_SPEED * dt;
+  // Left stick → move in head's horizontal forward direction.
+  const hasLx = Math.abs(lx) > VR_STICK_DEADZONE;
+  const hasLy = Math.abs(ly) > VR_STICK_DEADZONE;
+  if (hasLx || hasLy) {
+    const viewerPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+    if (viewerPose) {
+      const ori = viewerPose.transform.orientation;
+      _headQuat.set(ori.x, ori.y, ori.z, ori.w);
 
-  commitXRReferenceSpace();
+      _fwd.set(0, 0, -1).applyQuaternion(_headQuat);
+      _fwd.y = 0;
+      if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
+      else _fwd.normalize();
+      _right.crossVectors(_fwd, _up).normalize();
+
+      // Thumbstick Y: +1 = stick down = backward, -1 = stick up = forward.
+      const fwdInput = hasLy ? -ly : 0;
+      const rightInput = hasLx ? lx : 0;
+      const speed = VR_MOVE_SPEED * dt;
+      const dx = (_fwd.x * fwdInput + _right.x * rightInput) * speed;
+      const dz = (_fwd.z * fwdInput + _right.z * rightInput) * speed;
+
+      const dist = Math.hypot(dx, dz);
+      if (dist > 1e-8) {
+        const steps = Math.max(1, Math.ceil(dist / VR_MOVE_SUBSTEP));
+        const sx = dx / steps;
+        const sz = dz / steps;
+        for (let i = 0; i < steps; i++) {
+          const allowed = checkVRCollision({ x: sx, y: 0, z: sz });
+          xrPlayerPos.x += allowed.x;
+          xrPlayerPos.z += allowed.z;
+          if (Math.abs(allowed.x) < 1e-6 && Math.abs(allowed.z) < 1e-6) break;
+        }
+      }
+    }
+  }
+
+  commitPose();
 }
